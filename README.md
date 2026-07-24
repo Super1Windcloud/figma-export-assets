@@ -17,10 +17,11 @@ Example output:
 
 ```text
 exports/
-└── Components/
-    └── Buttons/
-        ├── primary_button.png
-        └── primary_button.9.png
+└── Mobile Design System/
+    └── Components/
+        └── Buttons/
+            ├── primary_button.png
+            └── primary_button.9.png
 ```
 
 ## Quick Start
@@ -75,10 +76,12 @@ NINE_PATCH_ENABLED=true
 | `FIGMA_TOKEN`        | Empty       | Personal access token used by the local backend    |
 | `FIGMA_URL`          | Empty       | Figma file URL displayed and parsed by the console |
 | `FIGMA_FILE_KEY`     | Empty       | File key used when no full URL is configured       |
-| `EXPORT_OUTPUT_DIR`  | `./exports` | Relative or absolute download directory            |
+| `EXPORT_OUTPUT_DIR`  | `./exports` | Relative or absolute root download directory       |
 | `NINE_PATCH_ENABLED` | `true`      | Generate a `.9.png` variant for every PNG          |
 
 Non-empty `.env` values are loaded into the corresponding form fields when the console starts. Configuration responses use `Cache-Control: no-store`, and `FIGMA_TOKEN` is never embedded in the frontend bundle.
+
+Each export creates or reuses one outer directory named after the Figma file under `EXPORT_OUTPUT_DIR`. Every page, node directory, original asset, and Nine-Patch variant for that file stays inside this directory.
 
 ## Nine-Patch Output
 

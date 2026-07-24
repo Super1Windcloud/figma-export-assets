@@ -31,6 +31,7 @@ interface DownloadItem extends ExportItem {
 }
 
 interface FigmaFileResponse {
+  name?: string;
   document: FigmaNode;
 }
 
@@ -294,6 +295,8 @@ async function main(): Promise<void> {
     `/files/${fileKey}`,
     token,
   );
+  const fileDirectoryName = sanitizePathSegment(file.name || fileKey);
+  const fileOutputDirectory = path.join(outputDirectory, fileDirectoryName);
   const exports: ExportItem[] = [];
   for (const page of file.document.children || [])
     collectExports(page, globalSetting, [], exports);
@@ -306,14 +309,14 @@ async function main(): Promise<void> {
 
   console.log(`Found ${exports.length} base nodes. Requesting export URLs...`);
   const urls = await getDownloadUrls(fileKey, token, exports);
-  const downloaded = await downloadWithConcurrency(urls, outputDirectory);
+  const downloaded = await downloadWithConcurrency(urls, fileOutputDirectory);
   if (NINE_PATCH_ENABLED) {
     console.log('Generating Nine-Patch variants with ImageMagick...');
     const generated = await createNinePatches(downloaded);
     console.log(`Generated ${generated.length} Nine-Patch assets.`);
   }
   console.log(
-    `Downloaded ${downloaded.length}/${exports.length} assets to ${outputDirectory}`,
+    `Downloaded ${downloaded.length}/${exports.length} assets to ${fileOutputDirectory}`,
   );
 }
 
