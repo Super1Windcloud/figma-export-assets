@@ -9,7 +9,8 @@
     "build": "tsc && vite build && vite build --config vite.plugin.config.ts",
     "start": "node --env-file=.env --import tsx server.ts",
     "app": "npm run build && npm run start",
-    "download": "node --env-file=.env --import tsx scripts/download-assets.ts"
+    "download": "node --env-file=.env --import tsx scripts/download-assets.ts",
+    "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.131.0",

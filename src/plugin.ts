@@ -1,3 +1,5 @@
+import { isBaseComponent } from './shared/figma-nodes';
+
 // Figma plugin entrypoint.
 const EXPORT_FORMAT = import.meta.env.VITE_EXPORT_FORMAT;
 const EXPORT_SCALE = Number(import.meta.env.VITE_EXPORT_SCALE);
@@ -6,7 +8,7 @@ const EXPORT_SUFFIX = import.meta.env.VITE_EXPORT_SUFFIX;
 type SupportedExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
 interface SyncResult {
-  baseNodesUpdated: number;
+  baseComponentsUpdated: number;
   nonBaseNodesCleared: number;
   unchanged: number;
   failed: number;
@@ -38,10 +40,6 @@ function readExportConfig(): ExportSettings {
   return { format, suffix: EXPORT_SUFFIX };
 }
 
-function isBaseNode(node: SceneNode): boolean {
-  return !('children' in node) || node.children.length === 0;
-}
-
 function exportSettingsEqual(
   current: ReadonlyArray<ExportSettings>,
   expected: ReadonlyArray<ExportSettings>,
@@ -54,7 +52,7 @@ function syncNode(
   exportSetting: ExportSettings,
   result: SyncResult,
 ): void {
-  const expected = isBaseNode(node) ? [exportSetting] : [];
+  const expected = isBaseComponent(node) ? [exportSetting] : [];
 
   if (exportSettingsEqual(node.exportSettings, expected)) {
     result.unchanged += 1;
@@ -64,7 +62,7 @@ function syncNode(
   try {
     node.exportSettings = expected;
     if (expected.length > 0) {
-      result.baseNodesUpdated += 1;
+      result.baseComponentsUpdated += 1;
     } else {
       result.nonBaseNodesCleared += 1;
     }
@@ -80,7 +78,7 @@ function syncNode(
 async function syncExportSettings(): Promise<SyncResult> {
   const exportSetting = readExportConfig();
   const result: SyncResult = {
-    baseNodesUpdated: 0,
+    baseComponentsUpdated: 0,
     nonBaseNodesCleared: 0,
     unchanged: 0,
     failed: 0,
@@ -101,7 +99,7 @@ async function main(): Promise<void> {
   try {
     const result = await syncExportSettings();
     const summary = [
-      `${result.baseNodesUpdated} base nodes updated`,
+      `${result.baseComponentsUpdated} base components updated`,
       `${result.nonBaseNodesCleared} non-base nodes cleared`,
       `${result.unchanged} unchanged`,
       `${result.failed} failed`,

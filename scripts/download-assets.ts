@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createNinePatches } from './nine-patch';
+import { isBaseComponent } from '../src/shared/figma-nodes';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
@@ -13,7 +14,7 @@ interface FigmaExportSetting {
 interface FigmaNode {
   id: string;
   name?: string;
-  type?: string;
+  type: string;
   children?: FigmaNode[];
   exportSettings?: FigmaExportSetting[];
 }
@@ -56,7 +57,9 @@ const EXPORT_SCALE = Number(
 );
 const EXPORT_SUFFIX =
   process.env.EXPORT_SUFFIX ?? process.env.VITE_EXPORT_SUFFIX ?? '';
-const EXPORT_BASE_NODES = process.env.EXPORT_BASE_NODES !== 'false';
+const EXPORT_BASE_COMPONENTS =
+  process.env.EXPORT_BASE_COMPONENTS !== 'false' &&
+  process.env.EXPORT_BASE_NODES !== 'false';
 const NINE_PATCH_ENABLED = process.env.NINE_PATCH_ENABLED !== 'false';
 
 function requireConfig(name: string, value: string | undefined): string {
@@ -109,11 +112,11 @@ function collectExports(
 ): ExportItem[] {
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
-  const isBaseNode = !node.children || node.children.length === 0;
-  const settings =
-    EXPORT_BASE_NODES && isBaseNode
+  const settings = EXPORT_BASE_COMPONENTS
+    ? isBaseComponent(node)
       ? [globalSetting]
-      : node.exportSettings || [];
+      : []
+    : node.exportSettings || [];
 
   for (const setting of settings) {
     const format = setting.format?.toUpperCase() as ExportFormat | undefined;
@@ -307,7 +310,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`Found ${exports.length} base nodes. Requesting export URLs...`);
+  console.log(
+    `Found ${exports.length} base components. Requesting export URLs...`,
+  );
   const urls = await getDownloadUrls(fileKey, token, exports);
   const downloaded = await downloadWithConcurrency(urls, fileOutputDirectory);
   if (NINE_PATCH_ENABLED) {

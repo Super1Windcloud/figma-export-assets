@@ -157,7 +157,7 @@ function startExport(payload: ExportPayload): ExportJob {
         EXPORT_FORMAT: payload.format,
         EXPORT_SCALE: String(payload.scale),
         EXPORT_SUFFIX: payload.suffix,
-        EXPORT_BASE_NODES: 'true',
+        EXPORT_BASE_COMPONENTS: 'true',
         NINE_PATCH_ENABLED: String(payload.ninePatchEnabled),
       },
     },
