@@ -1,14 +1,59 @@
 # Figma Asset Exporter
 
-This project includes a local export console and a Figma plugin. All application code is written in TypeScript:
+Export production-ready assets from a Figma file without manually selecting layers, renaming files, or rebuilding Android Nine-Patch resources.
 
-- The web console parses `fileName` and `fileKey` from a Figma URL, then starts a background download process with the submitted configuration.
-- The download process traverses every page, exports only base nodes without children, and preserves the Figma page and node directory hierarchy.
-- The Figma plugin synchronizes `exportSettings` in the file: it adds an export setting to base nodes and removes export settings from non-base nodes.
+The product combines a local web console, a background exporter, and an optional Figma plugin. Paste a Figma URL, review the detected file and export settings, choose an output directory, and start the job. The console keeps the process visible while assets are downloaded and post-processed.
+
+## What You Get
+
+- Every base node without children is exported automatically.
+- The Figma page and node hierarchy is preserved as local directories.
+- Existing assets are overwritten in place without deleting unrelated files.
+- Every exported PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file.
+- Job progress, skipped assets, conversion fallbacks, and failures are shown in the console.
+- The interface follows the system light or dark color scheme.
+
+Example output:
+
+```text
+exports/
+└── Components/
+    └── Buttons/
+        ├── primary_button.png
+        └── primary_button.9.png
+```
+
+## Quick Start
+
+Requirements:
+
+- Node.js 20 or later
+- A Figma personal access token with access to the target file
+- ImageMagick or GraphicsMagick for Nine-Patch generation (optional)
+
+Install and start the local console:
+
+```shell
+npm install
+npm run app
+```
+
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173), confirm the configuration, and start the export.
+
+## Product Workflow
+
+1. Paste a Figma `/design`, `/file`, `/proto`, `/board`, or `/slides` URL.
+2. Confirm the automatically extracted `fileName` and `fileKey`.
+3. Enter a personal access token or load it from `.env`.
+4. Select the export format, scale, suffix, output directory, and Nine-Patch behavior.
+5. Start the export and follow the background process from the job panel.
+6. Use the generated files directly from the selected output directory.
+
+The folder button opens the operating system directory picker. Submitted form values are passed only to the local background process and are not written back to `.env`.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and update the values as needed:
+Copy `.env.example` to `.env`:
 
 ```dotenv
 VITE_EXPORT_FORMAT=PNG
@@ -22,28 +67,40 @@ EXPORT_OUTPUT_DIR=./exports
 NINE_PATCH_ENABLED=true
 ```
 
-`VITE_EXPORT_FORMAT` supports `PNG`, `JPG`, `SVG`, and `PDF`. `VITE_EXPORT_SCALE` applies only to `PNG` and `JPG` exports.
+| Variable             | Default     | Purpose                                            |
+| -------------------- | ----------- | -------------------------------------------------- |
+| `VITE_EXPORT_FORMAT` | `PNG`       | Export format: `PNG`, `JPG`, `SVG`, or `PDF`       |
+| `VITE_EXPORT_SCALE`  | `1`         | Raster export scale from `0.01` to `4`             |
+| `VITE_EXPORT_SUFFIX` | Empty       | Optional suffix added to exported file names       |
+| `FIGMA_TOKEN`        | Empty       | Personal access token used by the local backend    |
+| `FIGMA_URL`          | Empty       | Figma file URL displayed and parsed by the console |
+| `FIGMA_FILE_KEY`     | Empty       | File key used when no full URL is configured       |
+| `EXPORT_OUTPUT_DIR`  | `./exports` | Relative or absolute download directory            |
+| `NINE_PATCH_ENABLED` | `true`      | Generate a `.9.png` variant for every PNG          |
 
-`EXPORT_OUTPUT_DIR` is the root download directory. Relative paths are resolved from the project directory; absolute paths are also supported. When the web console starts, non-empty URL, token, output directory, and export settings from `.env` are displayed in the corresponding form fields. `FIGMA_TOKEN` is not included in the frontend bundle, and the configuration API disables caching.
+Non-empty `.env` values are loaded into the corresponding form fields when the console starts. Configuration responses use `Cache-Control: no-store`, and `FIGMA_TOKEN` is never embedded in the frontend bundle.
 
-`NINE_PATCH_ENABLED` defaults to `true`. After downloading, every PNG is preserved and ImageMagick generates a matching Android Nine-Patch file beside it. For example, `button.png` produces `button.9.png`. The generated file uses a one-pixel transparent border, a centered stretch marker, and a full content area. Non-PNG exports are left unchanged.
+## Nine-Patch Output
 
-The converter tries ImageMagick 7 (`magick`), ImageMagick 6 (`identify` and `convert`), and GraphicsMagick (`gm`) in that order. If none is installed, or if an individual conversion fails, the issue is written to the task log and the original downloaded assets remain available. Missing conversion tools never cause the download task itself to fail.
+Nine-Patch generation is enabled by default. For every `button.png`, the exporter keeps the original file and creates `button.9.png` beside it.
 
-Existing output directories are reused. Existing original assets and generated `.9.png` files with the same paths are overwritten; unrelated files in the output directory are not removed.
+Generated Nine-Patch files contain:
 
-## Web Console
+- A one-pixel transparent border
+- A centered stretch marker on the top and left edges
+- A full content area on the bottom and right edges
 
-```shell
-npm install
-npm run app
-```
+The exporter looks for these processors in order:
 
-Open `http://127.0.0.1:4173` in a browser. Settings submitted through the console are passed to the local background process and are not written back to `.env`. The token is never included in the frontend bundle.
+1. ImageMagick 7: `magick`
+2. ImageMagick 6: `identify` and `convert`
+3. GraphicsMagick: `gm`
 
-The interface follows the system light or dark color scheme. Use the folder button beside the download directory field to select a directory with the operating system file manager.
+If none is installed, Nine-Patch generation is skipped and the original assets remain available. A failed conversion affects only that image and does not fail the download job.
 
-You can also download assets directly using the values in `.env`:
+## Direct Export
+
+To bypass the web console and use `.env` directly:
 
 ```shell
 npm run download
@@ -51,4 +108,20 @@ npm run download
 
 ## Figma Plugin
 
-Run `npm run build`, then select `Plugins > Development > Import plugin from manifest...` in Figma Desktop and import `manifest.json` from this directory. When the plugin runs, it synchronizes export settings across the entire file.
+The optional plugin synchronizes export metadata inside the Figma file. It adds the configured export setting to base nodes and removes export settings from non-base nodes.
+
+Build the project:
+
+```shell
+npm run build
+```
+
+In Figma Desktop, select `Plugins > Development > Import plugin from manifest...` and import `manifest.json` from this directory.
+
+## Data and Safety
+
+- The server listens only on `127.0.0.1`.
+- Tokens are used by the local backend and are not included in compiled frontend assets.
+- Existing files are overwritten only when their destination paths match generated assets.
+- Existing directories are reused; unrelated files are never removed.
+- Export and conversion commands are started without a shell.
