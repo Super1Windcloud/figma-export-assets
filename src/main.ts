@@ -9,13 +9,14 @@ import {
   Link,
   LoaderCircle,
   ShieldCheck,
+  Square,
   Terminal,
   createIcons,
 } from 'lucide';
 import { parseFigmaUrl, type ParsedFigmaUrl } from './shared/figma-url';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
-type JobStatus = 'running' | 'completed' | 'failed';
+type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
 interface ExportJob {
   id: string;
@@ -56,9 +57,11 @@ const jobPanel = requiredElement<HTMLElement>('#job-panel');
 const jobStatus = requiredElement<HTMLElement>('#job-status');
 const jobSummary = requiredElement<HTMLElement>('#job-summary');
 const logOutput = requiredElement<HTMLElement>('#job-logs');
+const cancelButton = requiredElement<HTMLButtonElement>('#cancel-job');
 
 let parsedFigmaUrl: ParsedFigmaUrl | null = null;
 let pollTimer: number | undefined;
+let activeJobId: string | null = null;
 
 function refreshIcons(): void {
   createIcons({
@@ -73,6 +76,7 @@ function refreshIcons(): void {
       Link,
       LoaderCircle,
       ShieldCheck,
+      Square,
       Terminal,
     },
   });
@@ -122,6 +126,7 @@ function renderJob(job: ExportJob): void {
       '导出失败',
       '请根据日志检查链接、token 或目录权限',
     ],
+    cancelled: ['square', '已停止', '导出进程已结束，已下载的文件会保留'],
   }[job.status];
 
   jobPanel.dataset.status = job.status;
@@ -130,6 +135,13 @@ function renderJob(job: ExportJob): void {
   logOutput.textContent =
     job.logs.length > 0 ? job.logs.join('\n') : '后台进程已启动...';
   logOutput.scrollTop = logOutput.scrollHeight;
+  cancelButton.hidden = job.status !== 'running' || !activeJobId;
+  if (job.status !== 'running') {
+    activeJobId = null;
+    cancelButton.disabled = false;
+    cancelButton.innerHTML =
+      '<i data-lucide="square"></i><span>停止导出</span>';
+  }
   refreshIcons();
 }
 
@@ -157,6 +169,38 @@ async function pollJob(jobId: string): Promise<void> {
     '<i data-lucide="download"></i><span>再次导出</span>';
   refreshIcons();
 }
+
+cancelButton.addEventListener('click', async () => {
+  if (!activeJobId) return;
+  let cancelAccepted = false;
+  cancelButton.disabled = true;
+  cancelButton.innerHTML =
+    '<i data-lucide="loader-circle"></i><span>正在停止</span>';
+  refreshIcons();
+
+  try {
+    const response = await fetch(
+      `/api/jobs/${encodeURIComponent(activeJobId)}/cancel`,
+      { method: 'POST' },
+    );
+    const result = (await response.json()) as { error?: string };
+    if (!response.ok) throw new Error(result.error || '停止任务失败');
+    cancelAccepted = true;
+  } catch (error) {
+    renderJob({
+      id: activeJobId,
+      status: 'failed',
+      logs: [error instanceof Error ? error.message : String(error)],
+    });
+  } finally {
+    if (!cancelAccepted) {
+      cancelButton.disabled = false;
+      cancelButton.innerHTML =
+        '<i data-lucide="square"></i><span>停止导出</span>';
+    }
+    refreshIcons();
+  }
+});
 
 async function loadPublicConfig(): Promise<void> {
   try {
@@ -256,6 +300,7 @@ form.addEventListener('submit', async (event) => {
     };
     if (!response.ok || !result.jobId)
       throw new Error(result.error || '后台任务启动失败');
+    activeJobId = result.jobId;
     await pollJob(result.jobId);
   } catch (error) {
     renderJob({

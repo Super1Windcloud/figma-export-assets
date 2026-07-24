@@ -52,6 +52,8 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173), confirm the configuration, 
 
 The folder button opens the operating system directory picker. Submitted form values are passed only to the local background process and are not written back to `.env`.
 
+While a job is running, use the stop button in the job panel to terminate the background process. The exporter first requests a graceful shutdown and forces termination if the process does not exit within three seconds. Files downloaded before cancellation are preserved.
+
 ## Configuration
 
 Copy `.env.example` to `.env`:

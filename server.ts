@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { parseFigmaUrl } from './src/shared/figma-url';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
-type JobStatus = 'running' | 'completed' | 'failed';
+type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
 interface ExportPayload {
   figmaUrl: string;
@@ -36,6 +36,8 @@ const WEB_ROOT = path.join(PROJECT_ROOT, 'dist', 'web');
 const PORT = Number(process.env.PORT || '4173');
 const HOST = '127.0.0.1';
 const jobs = new Map<string, ExportJob>();
+const jobProcesses = new Map<string, ReturnType<typeof spawn>>();
+const cancelledJobs = new Set<string>();
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -145,6 +147,7 @@ function startExport(payload: ExportPayload): ExportJob {
     ['--import', 'tsx', 'scripts/download-assets.ts'],
     {
       cwd: PROJECT_ROOT,
+      detached: process.platform !== 'win32',
       shell: false,
       env: {
         ...process.env,
@@ -159,6 +162,7 @@ function startExport(payload: ExportPayload): ExportJob {
       },
     },
   );
+  jobProcesses.set(job.id, child);
 
   child.stdout.on('data', (chunk: Buffer) => appendLog(job, chunk));
   child.stderr.on('data', (chunk: Buffer) => appendLog(job, chunk));
@@ -167,17 +171,52 @@ function startExport(payload: ExportPayload): ExportJob {
     job.logs.push(`Process error: ${error.message}`);
   });
   child.on('close', (exitCode) => {
+    jobProcesses.delete(job.id);
     job.exitCode = exitCode ?? 1;
-    job.status = exitCode === 0 ? 'completed' : 'failed';
+    const cancelled = cancelledJobs.delete(job.id);
+    job.status = cancelled
+      ? 'cancelled'
+      : exitCode === 0
+        ? 'completed'
+        : 'failed';
     job.logs.push(
-      exitCode === 0
-        ? 'Export process completed.'
-        : `Export process exited with code ${exitCode ?? 1}.`,
+      cancelled
+        ? 'Export process was stopped. Partial downloads were preserved.'
+        : exitCode === 0
+          ? 'Export process completed.'
+          : `Export process exited with code ${exitCode ?? 1}.`,
     );
     setTimeout(() => jobs.delete(job.id), 60 * 60 * 1000).unref();
   });
 
   return job;
+}
+
+function cancelExport(job: ExportJob): boolean {
+  const child = jobProcesses.get(job.id);
+  if (!child || job.status !== 'running' || !child.pid) return false;
+  cancelledJobs.add(job.id);
+  job.logs.push('Stopping export process...');
+
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      shell: false,
+    });
+  } else {
+    process.kill(-child.pid, 'SIGTERM');
+    const forceKillTimer = setTimeout(() => {
+      if (jobProcesses.has(job.id)) {
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          // The process group exited before the forced termination.
+        }
+      }
+    }, 3000);
+    forceKillTimer.unref();
+  }
+
+  return true;
 }
 
 function chooseDirectory(): Promise<string | null> {
@@ -314,6 +353,18 @@ const server = createServer(async (request, response) => {
       const job = jobs.get(jobMatch[1]);
       if (!job) sendJson(response, 404, { error: '任务不存在或已过期' });
       else sendJson(response, 200, job);
+      return;
+    }
+
+    const cancelMatch = requestUrl.pathname.match(
+      /^\/api\/jobs\/([a-f0-9-]+)\/cancel$/,
+    );
+    if (request.method === 'POST' && cancelMatch) {
+      const job = jobs.get(cancelMatch[1]);
+      if (!job) sendJson(response, 404, { error: '任务不存在或已过期' });
+      else if (!cancelExport(job))
+        sendJson(response, 409, { error: '任务已经结束' });
+      else sendJson(response, 202, { status: 'stopping' });
       return;
     }
 
