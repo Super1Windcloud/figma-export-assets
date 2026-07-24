@@ -28,6 +28,10 @@ NINE_PATCH_ENABLED=true
 
 `NINE_PATCH_ENABLED` defaults to `true`. After downloading, every PNG is preserved and ImageMagick generates a matching Android Nine-Patch file beside it. For example, `button.png` produces `button.9.png`. The generated file uses a one-pixel transparent border, a centered stretch marker, and a full content area. Non-PNG exports are left unchanged.
 
+The converter tries ImageMagick 7 (`magick`), ImageMagick 6 (`identify` and `convert`), and GraphicsMagick (`gm`) in that order. If none is installed, or if an individual conversion fails, the issue is written to the task log and the original downloaded assets remain available. Missing conversion tools never cause the download task itself to fail.
+
+Existing output directories are reused. Existing original assets and generated `.9.png` files with the same paths are overwritten; unrelated files in the output directory are not removed.
+
 ## Web Console
 
 ```shell

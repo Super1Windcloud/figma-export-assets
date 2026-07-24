@@ -250,7 +250,9 @@ async function downloadAsset(
   const directory = path.join(outputDirectory, ...item.directory);
   const destination = path.join(directory, item.fileName);
   await mkdir(directory, { recursive: true });
-  await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
+  await writeFile(destination, new Uint8Array(await response.arrayBuffer()), {
+    flag: 'w',
+  });
   console.log(`Saved ${path.relative(outputDirectory, destination)}`);
   return destination;
 }
