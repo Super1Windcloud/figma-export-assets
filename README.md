@@ -6,7 +6,7 @@ The product combines a local web console, a background exporter, and an optional
 
 ## What You Get
 
-- Only base `COMPONENT` nodes without nested `INSTANCE` dependencies are exported.
+- Every `COMPONENT` node is exported, including variants and components that reuse nested instances.
 - The Figma page and node hierarchy is preserved as local directories.
 - Existing assets are overwritten in place without deleting unrelated files.
 - Every exported PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file.
@@ -113,7 +113,7 @@ npm run download
 
 ## Figma Plugin
 
-The optional plugin synchronizes export metadata inside the Figma file. A base component is a node whose type is `COMPONENT` and whose descendants contain no `INSTANCE`. The plugin adds the configured export setting only to these components and removes export settings from primitive layers, instances, frames, groups, component sets, and composite components.
+The optional plugin synchronizes export metadata inside the Figma file. Every node whose type is `COMPONENT` receives the configured export setting, including variants inside a component set and components that reuse nested instances. Primitive layers, instances, frames, groups, and component-set containers have their export settings removed.
 
 Build the project:
 
