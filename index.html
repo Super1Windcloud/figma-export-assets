@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <title>Figma Asset Exporter</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div>
+          <strong>Figma Asset Exporter</strong>
+          <span>本地资源导出控制台</span>
+        </div>
+      </div>
+      <div class="local-status"><span></span>Local process</div>
+    </header>
+
+    <main class="workspace">
+      <section class="config-pane" aria-labelledby="config-title">
+        <div class="section-heading">
+          <div>
+            <p>EXPORT CONFIG</p>
+            <h1 id="config-title">导出配置</h1>
+          </div>
+          <div class="security-note">
+            <i data-lucide="shield-check"></i>Token 仅在本机使用
+          </div>
+        </div>
+
+        <form id="export-form">
+          <fieldset class="form-section">
+            <legend>Figma 文件</legend>
+            <label class="field field-wide">
+              <span>文件链接</span>
+              <div class="input-shell">
+                <i data-lucide="link"></i>
+                <input
+                  id="figma-url"
+                  type="url"
+                  placeholder="https://www.figma.com/design/..."
+                  required
+                />
+              </div>
+              <span id="url-status" class="field-status muted"></span>
+            </label>
+
+            <div class="parsed-file" aria-live="polite">
+              <div class="file-visual"><i data-lucide="file-image"></i></div>
+              <div class="parsed-value">
+                <span>fileName</span>
+                <strong id="parsed-file-name">--</strong>
+              </div>
+              <div class="parsed-value key-value">
+                <span>fileKey</span>
+                <code id="parsed-file-key">--</code>
+              </div>
+            </div>
+
+            <label class="field field-wide">
+              <span>Personal access token</span>
+              <div class="input-shell">
+                <i data-lucide="shield-check"></i>
+                <input
+                  id="figma-token"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="figd_..."
+                  required
+                />
+                <button
+                  id="toggle-token"
+                  class="icon-button"
+                  type="button"
+                  title="显示 token"
+                  aria-label="显示或隐藏 token"
+                >
+                  <i data-lucide="eye"></i>
+                </button>
+              </div>
+            </label>
+          </fieldset>
+
+          <fieldset class="form-section settings-grid">
+            <legend>资源设置</legend>
+            <div class="field format-field">
+              <span>导出格式</span>
+              <div class="segmented-control">
+                <label
+                  ><input type="radio" name="format" value="PNG" checked /><span
+                    >PNG</span
+                  ></label
+                >
+                <label
+                  ><input type="radio" name="format" value="JPG" /><span
+                    >JPG</span
+                  ></label
+                >
+                <label
+                  ><input type="radio" name="format" value="SVG" /><span
+                    >SVG</span
+                  ></label
+                >
+                <label
+                  ><input type="radio" name="format" value="PDF" /><span
+                    >PDF</span
+                  ></label
+                >
+              </div>
+            </div>
+            <label class="field">
+              <span>导出倍率</span>
+              <div class="input-shell compact">
+                <input
+                  id="export-scale"
+                  type="number"
+                  min="0.01"
+                  max="4"
+                  step="0.5"
+                  value="1"
+                  required
+                /><span>x</span>
+              </div>
+            </label>
+            <label class="field">
+              <span>文件后缀</span>
+              <div class="input-shell compact">
+                <input id="export-suffix" type="text" placeholder="例如 @2x" />
+              </div>
+            </label>
+            <label class="field destination-field">
+              <span>下载目录</span>
+              <div class="input-shell">
+                <input
+                  id="output-directory"
+                  type="text"
+                  value="./exports"
+                  required
+                />
+                <button
+                  id="select-directory"
+                  class="icon-button"
+                  type="button"
+                  title="选择下载目录"
+                  aria-label="打开文件资源管理器选择下载目录"
+                >
+                  <i data-lucide="folder-open"></i>
+                </button>
+              </div>
+            </label>
+          </fieldset>
+
+          <div class="action-row">
+            <p>仅导出无子节点的基础节点，目录结构与 Figma 页面层级保持一致。</p>
+            <button id="export-button" class="primary-button" type="submit">
+              <i data-lucide="download"></i><span>开始导出</span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <aside
+        id="job-panel"
+        class="job-pane"
+        data-status="idle"
+        aria-labelledby="job-title"
+      >
+        <div class="section-heading compact-heading">
+          <div>
+            <p>PROCESS</p>
+            <h2 id="job-title">后台任务</h2>
+          </div>
+          <i data-lucide="terminal"></i>
+        </div>
+        <div class="job-state">
+          <div id="job-status" class="job-status">
+            <span class="idle-dot"></span><span>等待导出</span>
+          </div>
+          <p id="job-summary">配置完成后，点击开始导出</p>
+        </div>
+        <pre id="job-logs" class="job-logs">后台日志将在这里显示。</pre>
+        <div class="job-footer">
+          <i data-lucide="shield-check"></i>
+          <span>任务在本机运行，浏览器关闭不会暴露 token。</span>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
