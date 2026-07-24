@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createNinePatches } from './nine-patch';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
@@ -55,6 +56,7 @@ const EXPORT_SCALE = Number(
 const EXPORT_SUFFIX =
   process.env.EXPORT_SUFFIX ?? process.env.VITE_EXPORT_SUFFIX ?? '';
 const EXPORT_BASE_NODES = process.env.EXPORT_BASE_NODES !== 'false';
+const NINE_PATCH_ENABLED = process.env.NINE_PATCH_ENABLED !== 'false';
 
 function requireConfig(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is required in .env`);
@@ -126,12 +128,18 @@ function collectExports(
         ? setting.constraint.value
         : undefined;
     const suffix = sanitizePathSegment(setting.suffix || '');
+    const normalizedNodeName =
+      NINE_PATCH_ENABLED &&
+      format === 'PNG' &&
+      nodeName.toLowerCase().endsWith('.9')
+        ? nodeName.slice(0, -2)
+        : nodeName;
     exports.push({
       nodeId: node.id,
       format,
       scale,
       directory: parentPath,
-      fileName: `${nodeName}${suffix === 'unnamed' ? '' : suffix}.${getExtension(format)}`,
+      fileName: `${normalizedNodeName}${suffix === 'unnamed' ? '' : suffix}.${getExtension(format)}`,
     });
   }
 
@@ -297,6 +305,11 @@ async function main(): Promise<void> {
   console.log(`Found ${exports.length} base nodes. Requesting export URLs...`);
   const urls = await getDownloadUrls(fileKey, token, exports);
   const downloaded = await downloadWithConcurrency(urls, outputDirectory);
+  if (NINE_PATCH_ENABLED) {
+    console.log('Generating Nine-Patch variants with ImageMagick...');
+    const generated = await createNinePatches(downloaded);
+    console.log(`Generated ${generated.length} Nine-Patch assets.`);
+  }
   console.log(
     `Downloaded ${downloaded.length}/${exports.length} assets to ${outputDirectory}`,
   );

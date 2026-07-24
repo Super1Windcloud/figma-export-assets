@@ -375,6 +375,71 @@ fieldset {
   box-shadow: 0 1px 3px rgba(30, 32, 38, 0.15);
 }
 
+.toggle-field {
+  grid-column: 1 / -1;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 12px;
+  border: 1px solid #e1e3e7;
+  background: #f8f9fb;
+  cursor: pointer;
+}
+
+.toggle-field > span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.toggle-field strong {
+  font-size: 12px;
+}
+
+.toggle-field small {
+  color: #7a7f87;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.toggle-field input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  flex: 0 0 auto;
+  position: relative;
+  border-radius: 10px;
+  background: #b6bac1;
+  transition: background 150ms;
+}
+
+.toggle-track::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(30, 32, 38, 0.3);
+  transition: transform 150ms;
+}
+
+.toggle-field input:checked + .toggle-track {
+  background: #5951df;
+}
+
+.toggle-field input:checked + .toggle-track::after {
+  transform: translateX(16px);
+}
+
 .action-row {
   display: flex;
   align-items: center;
@@ -621,6 +686,7 @@ fieldset {
 
   .parsed-file,
   .segmented-control,
+  .toggle-field,
   .job-pane {
     border-color: #393d45;
     background: #262a30;
@@ -633,6 +699,10 @@ fieldset {
 
   .segmented-control span {
     color: #aeb3bc;
+  }
+
+  .toggle-field small {
+    color: #9298a2;
   }
 
   .segmented-control input:checked + span {

@@ -20,6 +20,7 @@ interface ExportPayload {
   format: ExportFormat;
   scale: number;
   suffix: string;
+  ninePatchEnabled: boolean;
 }
 
 interface ExportJob {
@@ -106,6 +107,10 @@ function validatePayload(value: unknown): {
       format,
       scale,
       suffix: typeof input.suffix === 'string' ? input.suffix : '',
+      ninePatchEnabled:
+        typeof input.ninePatchEnabled === 'boolean'
+          ? input.ninePatchEnabled
+          : true,
     },
   };
 }
@@ -150,6 +155,7 @@ function startExport(payload: ExportPayload): ExportJob {
         EXPORT_SCALE: String(payload.scale),
         EXPORT_SUFFIX: payload.suffix,
         EXPORT_BASE_NODES: 'true',
+        NINE_PATCH_ENABLED: String(payload.ninePatchEnabled),
       },
     },
   );
@@ -278,6 +284,7 @@ const server = createServer(async (request, response) => {
         format: process.env.VITE_EXPORT_FORMAT || 'PNG',
         scale: Number(process.env.VITE_EXPORT_SCALE || '1'),
         suffix: process.env.VITE_EXPORT_SUFFIX || '',
+        ninePatchEnabled: process.env.NINE_PATCH_ENABLED !== 'false',
       });
       return;
     }

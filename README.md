@@ -1,14 +1,14 @@
 # Figma Asset Exporter
 
-项目包含一个本地导出控制台和一个 Figma 插件，所有业务代码均使用 TypeScript：
+This project includes a local export console and a Figma plugin. All application code is written in TypeScript:
 
-- Web 控制台解析 Figma 链接中的 `fileName` 和 `fileKey`，提交配置后启动后台下载进程。
-- 下载进程遍历所有页面，仅导出没有子节点的基础节点，并保留页面和节点目录层级。
-- Figma 插件可同步文件内的 `exportSettings`：基础节点添加 export，非基础节点移除 export。
+- The web console parses `fileName` and `fileKey` from a Figma URL, then starts a background download process with the submitted configuration.
+- The download process traverses every page, exports only base nodes without children, and preserves the Figma page and node directory hierarchy.
+- The Figma plugin synchronizes `exportSettings` in the file: it adds an export setting to base nodes and removes export settings from non-base nodes.
 
-## 配置
+## Configuration
 
-复制 `.env.example` 为 `.env`，按需修改：
+Copy `.env.example` to `.env` and update the values as needed:
 
 ```dotenv
 VITE_EXPORT_FORMAT=PNG
@@ -19,29 +19,32 @@ FIGMA_TOKEN=
 FIGMA_URL=
 FIGMA_FILE_KEY=
 EXPORT_OUTPUT_DIR=./exports
+NINE_PATCH_ENABLED=true
 ```
 
-`VITE_EXPORT_FORMAT` 支持 `PNG`、`JPG`、`SVG` 和 `PDF`。`VITE_EXPORT_SCALE` 只对 `PNG` 和 `JPG` 生效。
+`VITE_EXPORT_FORMAT` supports `PNG`, `JPG`, `SVG`, and `PDF`. `VITE_EXPORT_SCALE` applies only to `PNG` and `JPG` exports.
 
-`EXPORT_OUTPUT_DIR` 是资源下载根目录。相对路径以项目目录为基准，也可以填写绝对路径。启动 Web 控制台时，`.env` 中非空的链接、token、目录和导出规格会自动显示在对应表单中。`FIGMA_TOKEN` 不会进入前端 bundle，配置接口也禁止缓存。
+`EXPORT_OUTPUT_DIR` is the root download directory. Relative paths are resolved from the project directory; absolute paths are also supported. When the web console starts, non-empty URL, token, output directory, and export settings from `.env` are displayed in the corresponding form fields. `FIGMA_TOKEN` is not included in the frontend bundle, and the configuration API disables caching.
 
-## Web 控制台
+`NINE_PATCH_ENABLED` defaults to `true`. After downloading, every PNG is preserved and ImageMagick generates a matching Android Nine-Patch file beside it. For example, `button.png` produces `button.9.png`. The generated file uses a one-pixel transparent border, a centered stretch marker, and a full content area. Non-PNG exports are left unchanged.
+
+## Web Console
 
 ```shell
 npm install
 npm run app
 ```
 
-浏览器访问 `http://127.0.0.1:4173`。控制台中的配置会传给本地后台进程，不会写回 `.env`，token 也不会进入前端 bundle。
+Open `http://127.0.0.1:4173` in a browser. Settings submitted through the console are passed to the local background process and are not written back to `.env`. The token is never included in the frontend bundle.
 
-界面会跟随系统浅色/暗色模式。下载目录右侧的文件夹按钮会调用系统文件资源管理器选择目录。
+The interface follows the system light or dark color scheme. Use the folder button beside the download directory field to select a directory with the operating system file manager.
 
-也可以完全使用 `.env` 直接下载：
+You can also download assets directly using the values in `.env`:
 
 ```shell
 npm run download
 ```
 
-## Figma 插件
+## Figma Plugin
 
-执行 `npm run build`，然后在 Figma Desktop 中选择 `Plugins > Development > Import plugin from manifest...`，导入本目录的 `manifest.json`。插件运行后会自动同步整个文件的 export 配置。
+Run `npm run build`, then select `Plugins > Development > Import plugin from manifest...` in Figma Desktop and import `manifest.json` from this directory. When the plugin runs, it synchronizes export settings across the entire file.

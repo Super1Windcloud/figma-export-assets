@@ -121,7 +121,7 @@
                   type="number"
                   min="0.01"
                   max="4"
-                  step="0.5"
+                  step="0.01"
                   value="1"
                   required
                 /><span>x</span>
@@ -152,6 +152,17 @@
                   <i data-lucide="folder-open"></i>
                 </button>
               </div>
+            </label>
+            <label class="toggle-field">
+              <span>
+                <strong>Generate Nine-Patch variants</strong>
+                <small
+                  >Keep each original PNG and generate a matching .9.png file
+                  with ImageMagick.</small
+                >
+              </span>
+              <input id="nine-patch-enabled" type="checkbox" checked />
+              <span class="toggle-track" aria-hidden="true"></span>
             </label>
           </fieldset>
 

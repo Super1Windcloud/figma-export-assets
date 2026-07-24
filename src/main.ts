@@ -30,6 +30,7 @@ interface PublicConfig {
   format: ExportFormat;
   scale: number;
   suffix: string;
+  ninePatchEnabled: boolean;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -50,6 +51,7 @@ const urlStatus = requiredElement<HTMLElement>('#url-status');
 const submitButton = requiredElement<HTMLButtonElement>('#export-button');
 const tokenToggle = requiredElement<HTMLButtonElement>('#toggle-token');
 const directoryButton = requiredElement<HTMLButtonElement>('#select-directory');
+const ninePatchInput = requiredElement<HTMLInputElement>('#nine-patch-enabled');
 const jobPanel = requiredElement<HTMLElement>('#job-panel');
 const jobStatus = requiredElement<HTMLElement>('#job-status');
 const jobSummary = requiredElement<HTMLElement>('#job-summary');
@@ -166,6 +168,7 @@ async function loadPublicConfig(): Promise<void> {
     outputInput.value = config.outputDirectory;
     scaleInput.value = String(config.scale);
     suffixInput.value = config.suffix;
+    ninePatchInput.checked = config.ninePatchEnabled;
     const formatInput = form.querySelector<HTMLInputElement>(
       `input[name="format"][value="${config.format}"]`,
     );
@@ -244,6 +247,7 @@ form.addEventListener('submit', async (event) => {
         format: getSelectedFormat(),
         scale: Number(scaleInput.value),
         suffix: suffixInput.value,
+        ninePatchEnabled: ninePatchInput.checked,
       }),
     });
     const result = (await response.json()) as {
