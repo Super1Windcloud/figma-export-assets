@@ -10,6 +10,7 @@
     "start": "node --env-file=.env --import tsx server.ts",
     "app": "npm run build && npm run start",
     "download": "node --env-file=.env --import tsx scripts/download-assets.ts",
+    "generate:compose": "node --env-file=.env --import tsx scripts/compose-generator.ts",
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "devDependencies": {

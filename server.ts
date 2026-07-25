@@ -21,6 +21,10 @@ interface ExportPayload {
   scale: number;
   suffix: string;
   ninePatchEnabled: boolean;
+  designManifestEnabled: boolean;
+  composeGeneratorEnabled: boolean;
+  composeModuleName: string;
+  composePackageName: string;
 }
 
 interface ExportJob {
@@ -100,6 +104,18 @@ function validatePayload(value: unknown): {
   ) {
     return { error: 'PNG/JPG 导出倍率必须在 0 到 4 之间' };
   }
+  const composeModuleName =
+    typeof input.composeModuleName === 'string'
+      ? input.composeModuleName.trim()
+      : 'figma-compose-ui';
+  const composePackageName =
+    typeof input.composePackageName === 'string'
+      ? input.composePackageName.trim()
+      : 'com.generated.figmaui';
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(composeModuleName))
+    return { error: 'Compose module 名称只能包含字母、数字、下划线和连字符' };
+  if (!/^[A-Za-z][\w]*(\.[A-Za-z][\w]*)+$/.test(composePackageName))
+    return { error: 'Compose package name 无效' };
 
   return {
     payload: {
@@ -113,6 +129,16 @@ function validatePayload(value: unknown): {
         typeof input.ninePatchEnabled === 'boolean'
           ? input.ninePatchEnabled
           : true,
+      designManifestEnabled:
+        typeof input.designManifestEnabled === 'boolean'
+          ? input.designManifestEnabled
+          : true,
+      composeGeneratorEnabled:
+        typeof input.composeGeneratorEnabled === 'boolean'
+          ? input.composeGeneratorEnabled
+          : false,
+      composeModuleName,
+      composePackageName,
     },
   };
 }
@@ -159,6 +185,10 @@ function startExport(payload: ExportPayload): ExportJob {
         EXPORT_SUFFIX: payload.suffix,
         EXPORT_BASE_COMPONENTS: 'true',
         NINE_PATCH_ENABLED: String(payload.ninePatchEnabled),
+        DESIGN_MANIFEST_ENABLED: String(payload.designManifestEnabled),
+        COMPOSE_GENERATOR_ENABLED: String(payload.composeGeneratorEnabled),
+        COMPOSE_MODULE_NAME: payload.composeModuleName,
+        COMPOSE_PACKAGE_NAME: payload.composePackageName,
       },
     },
   );
@@ -324,6 +354,13 @@ const server = createServer(async (request, response) => {
         scale: Number(process.env.VITE_EXPORT_SCALE || '1'),
         suffix: process.env.VITE_EXPORT_SUFFIX || '',
         ninePatchEnabled: process.env.NINE_PATCH_ENABLED !== 'false',
+        designManifestEnabled: process.env.DESIGN_MANIFEST_ENABLED !== 'false',
+        composeGeneratorEnabled:
+          process.env.COMPOSE_GENERATOR_ENABLED === 'true',
+        composeModuleName:
+          process.env.COMPOSE_MODULE_NAME || 'figma-compose-ui',
+        composePackageName:
+          process.env.COMPOSE_PACKAGE_NAME || 'com.generated.figmaui',
       });
       return;
     }

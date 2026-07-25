@@ -32,6 +32,10 @@ interface PublicConfig {
   scale: number;
   suffix: string;
   ninePatchEnabled: boolean;
+  designManifestEnabled: boolean;
+  composeGeneratorEnabled: boolean;
+  composeModuleName: string;
+  composePackageName: string;
 }
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -53,6 +57,19 @@ const submitButton = requiredElement<HTMLButtonElement>('#export-button');
 const tokenToggle = requiredElement<HTMLButtonElement>('#toggle-token');
 const directoryButton = requiredElement<HTMLButtonElement>('#select-directory');
 const ninePatchInput = requiredElement<HTMLInputElement>('#nine-patch-enabled');
+const designManifestInput = requiredElement<HTMLInputElement>(
+  '#design-manifest-enabled',
+);
+const composeGeneratorInput = requiredElement<HTMLInputElement>(
+  '#compose-generator-enabled',
+);
+const composeOptions = requiredElement<HTMLElement>('#compose-options');
+const composeModuleNameInput = requiredElement<HTMLInputElement>(
+  '#compose-module-name',
+);
+const composePackageNameInput = requiredElement<HTMLInputElement>(
+  '#compose-package-name',
+);
 const jobPanel = requiredElement<HTMLElement>('#job-panel');
 const jobStatus = requiredElement<HTMLElement>('#job-status');
 const jobSummary = requiredElement<HTMLElement>('#job-summary');
@@ -115,6 +132,12 @@ function updateScaleState(): void {
   const rasterFormat = ['PNG', 'JPG'].includes(getSelectedFormat());
   scaleInput.disabled = !rasterFormat;
   scaleInput.closest('.field')?.classList.toggle('disabled', !rasterFormat);
+}
+
+function updateComposeOptions(): void {
+  composeOptions.hidden = !composeGeneratorInput.checked;
+  composeModuleNameInput.disabled = !composeGeneratorInput.checked;
+  composePackageNameInput.disabled = !composeGeneratorInput.checked;
 }
 
 function renderJob(job: ExportJob): void {
@@ -213,12 +236,17 @@ async function loadPublicConfig(): Promise<void> {
     scaleInput.value = String(config.scale);
     suffixInput.value = config.suffix;
     ninePatchInput.checked = config.ninePatchEnabled;
+    designManifestInput.checked = config.designManifestEnabled;
+    composeGeneratorInput.checked = config.composeGeneratorEnabled;
+    composeModuleNameInput.value = config.composeModuleName;
+    composePackageNameInput.value = config.composePackageName;
     const formatInput = form.querySelector<HTMLInputElement>(
       `input[name="format"][value="${config.format}"]`,
     );
     if (formatInput) formatInput.checked = true;
     renderParsedUrl();
     updateScaleState();
+    updateComposeOptions();
   } catch {
     // Static preview remains usable without the local API.
   }
@@ -227,6 +255,7 @@ async function loadPublicConfig(): Promise<void> {
 figmaUrlInput.addEventListener('input', renderParsedUrl);
 form.addEventListener('change', (event) => {
   if ((event.target as HTMLInputElement).name === 'format') updateScaleState();
+  if (event.target === composeGeneratorInput) updateComposeOptions();
 });
 
 tokenToggle.addEventListener('click', () => {
@@ -292,6 +321,10 @@ form.addEventListener('submit', async (event) => {
         scale: Number(scaleInput.value),
         suffix: suffixInput.value,
         ninePatchEnabled: ninePatchInput.checked,
+        designManifestEnabled: designManifestInput.checked,
+        composeGeneratorEnabled: composeGeneratorInput.checked,
+        composeModuleName: composeModuleNameInput.value.trim(),
+        composePackageName: composePackageNameInput.value.trim(),
       }),
     });
     const result = (await response.json()) as {
@@ -317,5 +350,6 @@ form.addEventListener('submit', async (event) => {
 
 renderParsedUrl();
 updateScaleState();
+updateComposeOptions();
 refreshIcons();
 void loadPublicConfig();

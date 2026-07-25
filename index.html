@@ -166,6 +166,56 @@
             </label>
           </fieldset>
 
+          <fieldset class="form-section generation-section">
+            <legend>生成阶段</legend>
+            <label class="toggle-field">
+              <span>
+                <strong>Generate design manifest</strong>
+                <small
+                  >Write a structured design-manifest.json beside the exported
+                  assets.</small
+                >
+              </span>
+              <input id="design-manifest-enabled" type="checkbox" checked />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <label class="toggle-field">
+              <span>
+                <strong>Generate Compose module</strong>
+                <small
+                  >Run the separate Compose Generator against the manifest
+                  contract.</small
+                >
+              </span>
+              <input id="compose-generator-enabled" type="checkbox" />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>
+            <div id="compose-options" class="compose-options" hidden>
+              <label class="field">
+                <span>Module name</span>
+                <div class="input-shell compact">
+                  <input
+                    id="compose-module-name"
+                    type="text"
+                    value="figma-compose-ui"
+                    required
+                  />
+                </div>
+              </label>
+              <label class="field">
+                <span>Package name</span>
+                <div class="input-shell compact">
+                  <input
+                    id="compose-package-name"
+                    type="text"
+                    value="com.generated.figmaui"
+                    required
+                  />
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
           <div class="action-row">
             <p>
               导出全部 Component，包括组件变体；Frame、Group

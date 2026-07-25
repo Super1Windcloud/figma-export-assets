@@ -1,5 +1,13 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { generateComposeModule } from './compose-generator';
+import {
+  DESIGN_MANIFEST_SCHEMA_VERSION,
+  type DesignManifest,
+  type ManifestComponent,
+  writeDesignManifest,
+} from './design-manifest';
 import { createNinePatches } from './nine-patch';
 import { isBaseComponent } from '../src/shared/figma-nodes';
 
@@ -17,6 +25,17 @@ interface FigmaNode {
   type: string;
   children?: FigmaNode[];
   exportSettings?: FigmaExportSetting[];
+  absoluteBoundingBox?: { width?: number; height?: number };
+  layoutMode?: string;
+  itemSpacing?: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  paddingLeft?: number;
+  primaryAxisSizingMode?: string;
+  counterAxisSizingMode?: string;
+  componentPropertyDefinitions?: Record<string, unknown>;
+  variantProperties?: Record<string, string>;
 }
 
 interface ExportItem {
@@ -25,10 +44,18 @@ interface ExportItem {
   scale?: number;
   directory: string[];
   fileName: string;
+  nodeName: string;
+  nodePath: string[];
+  sourceNode: FigmaNode;
+  componentSet?: { nodeId: string; name: string };
 }
 
 interface DownloadItem extends ExportItem {
   url: string;
+}
+
+interface DownloadedAsset extends ExportItem {
+  destination: string;
 }
 
 interface FigmaFileResponse {
@@ -61,6 +88,13 @@ const EXPORT_BASE_COMPONENTS =
   process.env.EXPORT_BASE_COMPONENTS !== 'false' &&
   process.env.EXPORT_BASE_NODES !== 'false';
 const NINE_PATCH_ENABLED = process.env.NINE_PATCH_ENABLED !== 'false';
+const DESIGN_MANIFEST_ENABLED = process.env.DESIGN_MANIFEST_ENABLED !== 'false';
+const COMPOSE_GENERATOR_ENABLED =
+  process.env.COMPOSE_GENERATOR_ENABLED === 'true';
+const COMPOSE_MODULE_NAME =
+  process.env.COMPOSE_MODULE_NAME?.trim() || 'figma-compose-ui';
+const COMPOSE_PACKAGE_NAME =
+  process.env.COMPOSE_PACKAGE_NAME?.trim() || 'com.generated.figmaui';
 
 function requireConfig(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is required in .env`);
@@ -109,6 +143,7 @@ function collectExports(
   globalSetting: FigmaExportSetting,
   parentPath: string[] = [],
   exports: ExportItem[] = [],
+  componentSet?: { nodeId: string; name: string },
 ): ExportItem[] {
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
@@ -144,11 +179,25 @@ function collectExports(
       scale,
       directory: parentPath,
       fileName: `${normalizedNodeName}${suffix === 'unnamed' ? '' : suffix}.${getExtension(format)}`,
+      nodeName,
+      nodePath: currentPath,
+      sourceNode: node,
+      componentSet,
     });
   }
 
+  const childComponentSet =
+    node.type === 'COMPONENT_SET'
+      ? { nodeId: node.id, name: nodeName }
+      : componentSet;
   for (const child of node.children || [])
-    collectExports(child, globalSetting, currentPath, exports);
+    collectExports(
+      child,
+      globalSetting,
+      currentPath,
+      exports,
+      childComponentSet,
+    );
   return exports;
 }
 
@@ -245,7 +294,7 @@ async function getDownloadUrls(
 async function downloadAsset(
   item: DownloadItem,
   outputDirectory: string,
-): Promise<string> {
+): Promise<DownloadedAsset> {
   const response = await fetch(item.url);
   if (!response.ok)
     throw new Error(
@@ -258,15 +307,15 @@ async function downloadAsset(
     flag: 'w',
   });
   console.log(`Saved ${path.relative(outputDirectory, destination)}`);
-  return destination;
+  return { ...item, destination };
 }
 
 async function downloadWithConcurrency(
   items: DownloadItem[],
   outputDirectory: string,
-): Promise<string[]> {
+): Promise<DownloadedAsset[]> {
   let nextIndex = 0;
-  const downloaded: string[] = [];
+  const downloaded: DownloadedAsset[] = [];
 
   async function worker(): Promise<void> {
     while (nextIndex < items.length) {
@@ -282,6 +331,91 @@ async function downloadWithConcurrency(
     ),
   );
   return downloaded;
+}
+
+function relativeAssetPath(root: string, target: string): string {
+  return path.relative(root, target).split(path.sep).join('/');
+}
+
+function buildManifest(
+  fileKey: string,
+  fileName: string,
+  fileOutputDirectory: string,
+  exports: ExportItem[],
+  downloaded: DownloadedAsset[],
+  ninePatches: string[],
+): DesignManifest {
+  const downloadsByNode = new Map<string, DownloadedAsset[]>();
+  for (const asset of downloaded) {
+    const assets = downloadsByNode.get(asset.nodeId) || [];
+    assets.push(asset);
+    downloadsByNode.set(asset.nodeId, assets);
+  }
+  const ninePatchSet = new Set(ninePatches.map((asset) => path.resolve(asset)));
+  const components = new Map<string, ManifestComponent>();
+
+  for (const item of exports) {
+    if (components.has(item.nodeId)) continue;
+    const source = item.sourceNode;
+    const width = source.absoluteBoundingBox?.width;
+    const height = source.absoluteBoundingBox?.height;
+    const assets = (downloadsByNode.get(item.nodeId) || []).map((asset) => {
+      const ninePatchPath = asset.destination.replace(/\.png$/i, '.9.png');
+      return {
+        format: asset.format,
+        scale: asset.scale,
+        relativePath: relativeAssetPath(fileOutputDirectory, asset.destination),
+        ninePatchRelativePath: ninePatchSet.has(path.resolve(ninePatchPath))
+          ? relativeAssetPath(fileOutputDirectory, ninePatchPath)
+          : undefined,
+      };
+    });
+    const hasLayout =
+      source.layoutMode !== undefined ||
+      source.itemSpacing !== undefined ||
+      source.paddingTop !== undefined;
+    components.set(item.nodeId, {
+      nodeId: item.nodeId,
+      name: item.nodeName,
+      nodePath: item.nodePath,
+      type: 'COMPONENT',
+      componentSet: item.componentSet,
+      dimensions:
+        typeof width === 'number' && typeof height === 'number'
+          ? { width, height }
+          : undefined,
+      layout: hasLayout
+        ? {
+            mode: source.layoutMode,
+            itemSpacing: source.itemSpacing,
+            padding: {
+              top: source.paddingTop || 0,
+              right: source.paddingRight || 0,
+              bottom: source.paddingBottom || 0,
+              left: source.paddingLeft || 0,
+            },
+            primaryAxisSizingMode: source.primaryAxisSizingMode,
+            counterAxisSizingMode: source.counterAxisSizingMode,
+          }
+        : undefined,
+      variantProperties: source.variantProperties,
+      componentProperties: source.componentPropertyDefinitions,
+      assets,
+    });
+  }
+
+  return {
+    schemaVersion: DESIGN_MANIFEST_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    figma: { fileKey, fileName },
+    export: {
+      format: EXPORT_FORMAT,
+      scale: ['PNG', 'JPG'].includes(EXPORT_FORMAT) ? EXPORT_SCALE : undefined,
+      suffix: EXPORT_SUFFIX,
+      assetRoot: '.',
+    },
+    components: [...components.values()],
+  };
 }
 
 async function main(): Promise<void> {
@@ -305,20 +439,62 @@ async function main(): Promise<void> {
     collectExports(page, globalSetting, [], exports);
   disambiguateFileNames(exports);
 
-  if (exports.length === 0) {
-    console.log('No exportable nodes were found.');
-    return;
-  }
-
-  console.log(
-    `Found ${exports.length} base components. Requesting export URLs...`,
-  );
-  const urls = await getDownloadUrls(fileKey, token, exports);
+  if (exports.length === 0) console.log('No exportable nodes were found.');
+  else
+    console.log(
+      `Found ${exports.length} base components. Requesting export URLs...`,
+    );
+  const urls =
+    exports.length > 0 ? await getDownloadUrls(fileKey, token, exports) : [];
   const downloaded = await downloadWithConcurrency(urls, fileOutputDirectory);
+  let ninePatches: string[] = [];
   if (NINE_PATCH_ENABLED) {
     console.log('Generating Nine-Patch variants with ImageMagick...');
-    const generated = await createNinePatches(downloaded);
-    console.log(`Generated ${generated.length} Nine-Patch assets.`);
+    ninePatches = await createNinePatches(
+      downloaded.map((asset) => asset.destination),
+    );
+    console.log(`Generated ${ninePatches.length} Nine-Patch assets.`);
+  }
+  const manifest = buildManifest(
+    fileKey,
+    file.name || fileKey,
+    fileOutputDirectory,
+    exports,
+    downloaded,
+    ninePatches,
+  );
+  const manifestPath = path.join(fileOutputDirectory, 'design-manifest.json');
+  let generatorManifestPath = manifestPath;
+  let temporaryDirectory: string | undefined;
+  if (DESIGN_MANIFEST_ENABLED) {
+    await writeDesignManifest(manifestPath, manifest);
+    console.log(`Saved ${path.relative(outputDirectory, manifestPath)}`);
+  } else if (COMPOSE_GENERATOR_ENABLED) {
+    temporaryDirectory = await mkdtemp(
+      path.join(os.tmpdir(), 'figma-design-manifest-'),
+    );
+    generatorManifestPath = path.join(
+      temporaryDirectory,
+      'design-manifest.json',
+    );
+    await writeDesignManifest(generatorManifestPath, manifest);
+  }
+
+  if (COMPOSE_GENERATOR_ENABLED) {
+    try {
+      const result = await generateComposeModule(generatorManifestPath, {
+        outputDirectory: fileOutputDirectory,
+        moduleName: COMPOSE_MODULE_NAME,
+        packageName: COMPOSE_PACKAGE_NAME,
+        assetRoot: fileOutputDirectory,
+      });
+      console.log(
+        `Generated Compose module with ${result.resourceCount}/${result.componentCount} component resources at ${result.moduleDirectory}`,
+      );
+    } finally {
+      if (temporaryDirectory)
+        await rm(temporaryDirectory, { recursive: true, force: true });
+    }
   }
   console.log(
     `Downloaded ${downloaded.length}/${exports.length} assets to ${fileOutputDirectory}`,

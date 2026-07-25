@@ -212,6 +212,18 @@ fieldset {
 .destination-field {
   grid-column: 1 / -1;
 }
+.generation-section .toggle-field,
+.compose-options {
+  grid-column: 1 / -1;
+}
+.compose-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.compose-options[hidden] {
+  display: none;
+}
 .field.disabled {
   opacity: 0.5;
 }
@@ -637,8 +649,13 @@ fieldset {
   }
   .field-wide,
   .format-field,
-  .destination-field {
+  .destination-field,
+  .generation-section .toggle-field,
+  .compose-options {
     grid-column: 1;
+  }
+  .compose-options {
+    grid-template-columns: 1fr;
   }
   .parsed-file {
     grid-template-columns: 36px minmax(0, 1fr);
