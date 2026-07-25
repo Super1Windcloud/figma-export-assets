@@ -104,7 +104,7 @@ Each export creates or reuses one outer directory named after the Figma file und
 
 The exporter always constructs one in-memory manifest contract when either generation stage is enabled. The **Generate design manifest** switch controls whether that contract remains as `design-manifest.json`. The **Generate Compose module** switch starts a separate generator that reads the contract from a file. If Compose generation is enabled while manifest persistence is disabled, the exporter writes a temporary manifest, runs the generator, and removes only that temporary file afterward.
 
-The manifest is the stable boundary between Figma extraction and platform generation. A component entry includes its node ID, Figma path, component-set membership, dimensions, Auto Layout metadata when available, variant properties, and relative asset paths. Consumers therefore do not need a Figma token or access to the original document.
+The manifest is the stable boundary between Figma extraction and platform generation. Schema v2 includes a complete `document` tree containing every page and descendant layer, independent of whether a node is exported as an asset. Node entries preserve identity, hierarchy, visibility, bounds, Auto Layout metadata, text, style references, paint/effect data, component references, and mask metadata such as `isMask` and `maskType`. Their `properties` object also retains every source API property not used by the tree identity fields, preventing less common or newly introduced Figma fields from being silently discarded. The existing `components` collection remains the asset-oriented index used by the Compose generator.
 
 The generated Android library contains:
 

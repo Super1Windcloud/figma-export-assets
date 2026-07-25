@@ -23,6 +23,13 @@ function exampleManifest(): DesignManifest {
     generatedAt: '2026-07-25T00:00:00.000Z',
     figma: { fileKey: 'file-key', fileName: 'Design System' },
     export: { format: 'PNG', scale: 1, suffix: '', assetRoot: '.' },
+    document: {
+      nodeId: '0:0',
+      name: 'Document',
+      nodePath: ['Document'],
+      type: 'DOCUMENT',
+      properties: {},
+    },
     components: [
       {
         nodeId: '12:34',

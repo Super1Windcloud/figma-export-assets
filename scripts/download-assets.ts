@@ -4,7 +4,9 @@ import path from 'node:path';
 import { generateComposeModule } from './compose-generator';
 import {
   DESIGN_MANIFEST_SCHEMA_VERSION,
+  createManifestNode,
   type DesignManifest,
+  type FigmaManifestNode,
   type ManifestComponent,
   writeDesignManifest,
 } from './design-manifest';
@@ -19,7 +21,7 @@ interface FigmaExportSetting {
   constraint?: { type?: string; value?: number };
 }
 
-interface FigmaNode {
+interface FigmaNode extends FigmaManifestNode {
   id: string;
   name?: string;
   type: string;
@@ -341,6 +343,7 @@ function buildManifest(
   fileKey: string,
   fileName: string,
   fileOutputDirectory: string,
+  document: FigmaNode,
   exports: ExportItem[],
   downloaded: DownloadedAsset[],
   ninePatches: string[],
@@ -414,6 +417,7 @@ function buildManifest(
       suffix: EXPORT_SUFFIX,
       assetRoot: '.',
     },
+    document: createManifestNode(document, []),
     components: [...components.values()],
   };
 }
@@ -459,6 +463,7 @@ async function main(): Promise<void> {
     fileKey,
     file.name || fileKey,
     fileOutputDirectory,
+    file.document,
     exports,
     downloaded,
     ninePatches,

@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   DESIGN_MANIFEST_SCHEMA_VERSION,
+  createManifestNode,
   readDesignManifest,
   type DesignManifest,
   writeDesignManifest,
@@ -16,6 +17,13 @@ export function exampleManifest(): DesignManifest {
     generatedAt: '2026-07-25T00:00:00.000Z',
     figma: { fileKey: 'file-key', fileName: 'Design System' },
     export: { format: 'PNG', scale: 1, suffix: '', assetRoot: '.' },
+    document: {
+      nodeId: '0:0',
+      name: 'Document',
+      nodePath: ['Document'],
+      type: 'DOCUMENT',
+      properties: {},
+    },
     components: [
       {
         nodeId: '12:34',
@@ -54,4 +62,67 @@ test('writes and reads a structured design manifest', async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('preserves every layer including non-exported mask nodes', () => {
+  const document = createManifestNode({
+    id: '0:0',
+    name: 'Document',
+    type: 'DOCUMENT',
+    children: [
+      {
+        id: '1:1',
+        name: 'Components',
+        type: 'CANVAS',
+        children: [
+          {
+            id: '2:1',
+            name: 'Card',
+            type: 'COMPONENT',
+            children: [
+              {
+                id: '2:2',
+                name: 'mask-up',
+                type: 'RECTANGLE',
+                isMask: true,
+                maskType: 'ALPHA',
+                visible: true,
+                absoluteBoundingBox: {
+                  x: 10,
+                  y: 20,
+                  width: 120,
+                  height: 48,
+                },
+                exportSettings: [],
+              },
+              {
+                id: '2:3',
+                name: 'Label',
+                type: 'TEXT',
+                characters: 'Continue',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const mask = document.children?.[0].children?.[0].children?.[0];
+  assert.equal(mask?.name, 'mask-up');
+  assert.equal(mask?.isMask, true);
+  assert.equal(mask?.maskType, 'ALPHA');
+  assert.deepEqual(mask?.nodePath, [
+    'Document',
+    'Components',
+    'Card',
+    'mask-up',
+  ]);
+  assert.deepEqual(mask?.bounds, {
+    x: 10,
+    y: 20,
+    width: 120,
+    height: 48,
+  });
+  assert.deepEqual(mask?.properties.exportSettings, []);
 });
