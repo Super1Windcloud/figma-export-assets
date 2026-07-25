@@ -159,6 +159,10 @@ test('generates a Compose module by consuming only the manifest contract', async
       'src/main/java/com/example/designui/FigmaComponents.kt',
     );
     const kotlin = await readFile(kotlinPath, 'utf8');
+    const buildGradle = await readFile(
+      path.join(result.moduleDirectory, 'build.gradle.kts'),
+      'utf8',
+    );
     assert.match(kotlin, /enum class FigmaComponent/);
     assert.match(kotlin, /PRIMARY_BUTTON/);
     assert.match(kotlin, /COMPONENT_12_35/);
@@ -167,6 +171,8 @@ test('generates a Compose module by consuming only the manifest contract', async
     assert.match(kotlin, /layoutMode = "HORIZONTAL"/);
     assert.match(kotlin, /characters = "Continue"/);
     assert.match(kotlin, /isMask = true/);
+    assert.match(buildGradle, /JavaVersion\.VERSION_17/);
+    assert.match(buildGradle, /jvmToolchain\(17\)/);
     await access(
       path.join(
         result.moduleDirectory,

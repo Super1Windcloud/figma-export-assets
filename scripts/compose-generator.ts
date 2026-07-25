@@ -210,7 +210,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
@@ -231,7 +230,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 enum class FigmaComponent(
-  @DrawableRes val fallbackDrawableRes: Int?,
+  @param:DrawableRes val fallbackDrawableRes: Int?,
   val figmaName: String,
   val nodeId: String,
 ) {
@@ -472,7 +471,13 @@ android {
 
   defaultConfig { minSdk = 23 }
   buildFeatures { compose = true }
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
 }
+
+kotlin { jvmToolchain(17) }
 
 dependencies {
   implementation(platform("androidx.compose:compose-bom:2025.08.01"))
