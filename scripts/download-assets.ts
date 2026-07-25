@@ -494,7 +494,7 @@ async function main(): Promise<void> {
         assetRoot: fileOutputDirectory,
       });
       console.log(
-        `Generated Compose module with ${result.resourceCount}/${result.componentCount} component resources at ${result.moduleDirectory}`,
+        `Generated Compose module with ${result.semanticComponentCount}/${result.componentCount} semantic components, ${result.fallbackOnlyComponentCount} fallback-only components, and ${result.resourceCount} fallback resources at ${result.moduleDirectory}`,
       );
     } finally {
       if (temporaryDirectory)

@@ -29,6 +29,77 @@ function exampleManifest(): DesignManifest {
       nodePath: ['Document'],
       type: 'DOCUMENT',
       properties: {},
+      children: [
+        {
+          nodeId: '1:1',
+          name: 'Components',
+          nodePath: ['Document', 'Components'],
+          type: 'CANVAS',
+          properties: {},
+          children: [
+            {
+              nodeId: '12:34',
+              name: 'Primary Button',
+              nodePath: ['Document', 'Components', 'Primary Button'],
+              type: 'COMPONENT',
+              bounds: { x: 0, y: 0, width: 120, height: 48 },
+              layout: {
+                mode: 'HORIZONTAL',
+                itemSpacing: 8,
+                padding: { top: 12, right: 16, bottom: 12, left: 16 },
+              },
+              fills: [
+                { type: 'SOLID', color: { r: 0.1, g: 0.2, b: 0.8 } },
+              ],
+              cornerRadius: 8,
+              properties: {},
+              children: [
+                {
+                  nodeId: '12:36',
+                  name: 'mask-up',
+                  nodePath: [
+                    'Document',
+                    'Components',
+                    'Primary Button',
+                    'mask-up',
+                  ],
+                  type: 'RECTANGLE',
+                  isMask: true,
+                  maskType: 'ALPHA',
+                  bounds: { x: 0, y: 0, width: 120, height: 48 },
+                  properties: {},
+                },
+                {
+                  nodeId: '12:37',
+                  name: 'Label',
+                  nodePath: [
+                    'Document',
+                    'Components',
+                    'Primary Button',
+                    'Label',
+                  ],
+                  type: 'TEXT',
+                  characters: 'Continue',
+                  bounds: { x: 16, y: 12, width: 88, height: 24 },
+                  fills: [
+                    { type: 'SOLID', color: { r: 1, g: 1, b: 1 } },
+                  ],
+                  textStyle: { fontSize: 16, fontWeight: 600 },
+                  properties: {},
+                },
+              ],
+            },
+            {
+              nodeId: '12:35',
+              name: 'Text Only',
+              nodePath: ['Document', 'Components', 'Text Only'],
+              type: 'COMPONENT',
+              bounds: { x: 0, y: 60, width: 100, height: 24 },
+              properties: {},
+            },
+          ],
+        },
+      ],
     },
     components: [
       {
@@ -44,6 +115,13 @@ function exampleManifest(): DesignManifest {
             ninePatchRelativePath: 'Components/Buttons/Primary Button.9.png',
           },
         ],
+      },
+      {
+        nodeId: '12:35',
+        name: 'Text Only',
+        nodePath: ['Components', 'Text Only'],
+        type: 'COMPONENT',
+        assets: [],
       },
     ],
   };
@@ -72,7 +150,9 @@ test('generates a Compose module by consuming only the manifest contract', async
       packageName: 'com.example.designui',
     });
 
-    assert.equal(result.componentCount, 1);
+    assert.equal(result.componentCount, 2);
+    assert.equal(result.semanticComponentCount, 2);
+    assert.equal(result.fallbackOnlyComponentCount, 0);
     assert.equal(result.resourceCount, 2);
     const kotlinPath = path.join(
       result.moduleDirectory,
@@ -81,6 +161,12 @@ test('generates a Compose module by consuming only the manifest contract', async
     const kotlin = await readFile(kotlinPath, 'utf8');
     assert.match(kotlin, /enum class FigmaComponent/);
     assert.match(kotlin, /PRIMARY_BUTTON/);
+    assert.match(kotlin, /COMPONENT_12_35/);
+    assert.match(kotlin, /fun FigmaComponentUi/);
+    assert.match(kotlin, /fun FigmaPrimaryButton12_34/);
+    assert.match(kotlin, /layoutMode = "HORIZONTAL"/);
+    assert.match(kotlin, /characters = "Continue"/);
+    assert.match(kotlin, /isMask = true/);
     await access(
       path.join(
         result.moduleDirectory,

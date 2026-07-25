@@ -109,12 +109,15 @@ The manifest is the stable boundary between Figma extraction and platform genera
 The generated Android library contains:
 
 - A host-project-compatible `build.gradle.kts`
-- Original PNG or JPG drawable resources and available Nine-Patch variants
+- Semantic component composables generated from the manifest layer tree
+- `Row`, `Column`, and `Box` mappings for Auto Layout and free-positioned layers
+- Text, solid fills, opacity, rounded corners, borders, sizing, spacing, and basic geometric masks
+- Original PNG or JPG drawable resources and available Nine-Patch variants as explicit fallbacks
 - A typed `FigmaComponent` enum
-- Reusable `FigmaComponentImage` and `FigmaComponentCatalog` composables
+- Reusable `FigmaComponentUi`, `FigmaComponentImage`, and `FigmaComponentCatalog` composables
 - An Android Studio preview
 
-This first generator is deliberately image-backed. It provides a complete resource component module without pretending that raster exports contain semantic layout, text, interaction, accessibility, or state information. The structured manifest is designed so a future semantic generator can use richer node data without changing the export pipeline.
+`FigmaComponentUi` is the default catalog renderer. `FigmaComponentImage` remains available when a caller explicitly needs the original raster reference. Complex vector geometry, gradient/image fills, arbitrary alpha masks, effects, fonts, interaction, accessibility semantics, and business state still require project-specific implementation; the generator does not silently replace those semantics with a raster image.
 
 ## Nine-Patch Output
 
