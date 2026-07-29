@@ -28,7 +28,7 @@ interface PublicConfig {
   figmaUrl: string;
   token: string;
   outputDirectory: string;
-  format: ExportFormat;
+  formats: ExportFormat[];
   scale: number;
   suffix: string;
   ninePatchEnabled: boolean;
@@ -121,15 +121,16 @@ function renderParsedUrl(): void {
   refreshIcons();
 }
 
-function getSelectedFormat(): ExportFormat {
-  const selected = form.querySelector<HTMLInputElement>(
-    'input[name="format"]:checked',
-  );
-  return (selected?.value ?? 'PNG') as ExportFormat;
+function getSelectedFormats(): ExportFormat[] {
+  return [
+    ...form.querySelectorAll<HTMLInputElement>('input[name="format"]:checked'),
+  ].map((input) => input.value as ExportFormat);
 }
 
 function updateScaleState(): void {
-  const rasterFormat = ['PNG', 'JPG'].includes(getSelectedFormat());
+  const rasterFormat = getSelectedFormats().some((format) =>
+    ['PNG', 'JPG'].includes(format),
+  );
   scaleInput.disabled = !rasterFormat;
   scaleInput.closest('.field')?.classList.toggle('disabled', !rasterFormat);
 }
@@ -240,10 +241,14 @@ async function loadPublicConfig(): Promise<void> {
     composeGeneratorInput.checked = config.composeGeneratorEnabled;
     composeModuleNameInput.value = config.composeModuleName;
     composePackageNameInput.value = config.composePackageName;
-    const formatInput = form.querySelector<HTMLInputElement>(
-      `input[name="format"][value="${config.format}"]`,
-    );
-    if (formatInput) formatInput.checked = true;
+    const configuredFormats = new Set(config.formats);
+    for (const formatInput of form.querySelectorAll<HTMLInputElement>(
+      'input[name="format"]',
+    )) {
+      formatInput.checked = configuredFormats.has(
+        formatInput.value as ExportFormat,
+      );
+    }
     renderParsedUrl();
     updateScaleState();
     updateComposeOptions();
@@ -302,6 +307,11 @@ form.addEventListener('submit', async (event) => {
     figmaUrlInput.focus();
     return;
   }
+  const formats = getSelectedFormats();
+  if (formats.length === 0) {
+    renderJob({ id: '', status: 'failed', logs: ['请至少选择一种导出格式'] });
+    return;
+  }
 
   clearTimeout(pollTimer);
   submitButton.disabled = true;
@@ -317,7 +327,7 @@ form.addEventListener('submit', async (event) => {
         figmaUrl: figmaUrlInput.value.trim(),
         token: tokenInput.value.trim(),
         outputDirectory: outputInput.value.trim(),
-        format: getSelectedFormat(),
+        formats,
         scale: Number(scaleInput.value),
         suffix: suffixInput.value,
         ninePatchEnabled: ninePatchInput.checked,

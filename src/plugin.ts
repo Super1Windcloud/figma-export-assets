@@ -2,6 +2,7 @@ import { isBaseComponent } from './shared/figma-nodes';
 
 // Figma plugin entrypoint.
 const EXPORT_FORMAT = import.meta.env.VITE_EXPORT_FORMAT;
+const EXPORT_FORMATS = import.meta.env.VITE_EXPORT_FORMATS || EXPORT_FORMAT;
 const EXPORT_SCALE = Number(import.meta.env.VITE_EXPORT_SCALE);
 const EXPORT_SUFFIX = import.meta.env.VITE_EXPORT_SUFFIX;
 
@@ -14,30 +15,36 @@ interface SyncResult {
   failed: number;
 }
 
-function readExportConfig(): ExportSettings {
-  const format = EXPORT_FORMAT.toUpperCase() as SupportedExportFormat;
+function readExportConfigs(): ExportSettings[] {
+  const formats = EXPORT_FORMATS.split(',').map(
+    (format) => format.trim().toUpperCase() as SupportedExportFormat,
+  );
 
-  if (!['PNG', 'JPG', 'SVG', 'PDF'].includes(format)) {
+  if (
+    formats.length === 0 ||
+    formats.some((format) => !['PNG', 'JPG', 'SVG', 'PDF'].includes(format))
+  ) {
     throw new Error(
-      `VITE_EXPORT_FORMAT must be PNG, JPG, SVG or PDF; received "${EXPORT_FORMAT}"`,
+      `VITE_EXPORT_FORMATS must contain PNG, JPG, SVG or PDF; received "${EXPORT_FORMATS}"`,
     );
   }
 
-  if (format === 'PNG' || format === 'JPG') {
+  if (formats.some((format) => format === 'PNG' || format === 'JPG')) {
     if (!Number.isFinite(EXPORT_SCALE) || EXPORT_SCALE <= 0) {
       throw new Error(
         `VITE_EXPORT_SCALE must be greater than 0; received "${import.meta.env.VITE_EXPORT_SCALE}"`,
       );
     }
-
-    return {
-      format,
-      suffix: EXPORT_SUFFIX,
-      constraint: { type: 'SCALE', value: EXPORT_SCALE },
-    };
   }
 
-  return { format, suffix: EXPORT_SUFFIX };
+  return [...new Set(formats)].map((format) => ({
+    format,
+    suffix: EXPORT_SUFFIX,
+    constraint:
+      format === 'PNG' || format === 'JPG'
+        ? { type: 'SCALE', value: EXPORT_SCALE }
+        : undefined,
+  }));
 }
 
 function exportSettingsEqual(
@@ -49,10 +56,10 @@ function exportSettingsEqual(
 
 function syncNode(
   node: SceneNode,
-  exportSetting: ExportSettings,
+  exportSettings: ExportSettings[],
   result: SyncResult,
 ): void {
-  const expected = isBaseComponent(node) ? [exportSetting] : [];
+  const expected = isBaseComponent(node) ? exportSettings : [];
 
   if (exportSettingsEqual(node.exportSettings, expected)) {
     result.unchanged += 1;
@@ -76,7 +83,7 @@ function syncNode(
 }
 
 async function syncExportSettings(): Promise<SyncResult> {
-  const exportSetting = readExportConfig();
+  const exportSettings = readExportConfigs();
   const result: SyncResult = {
     baseComponentsUpdated: 0,
     nonBaseNodesCleared: 0,
@@ -88,7 +95,7 @@ async function syncExportSettings(): Promise<SyncResult> {
 
   for (const page of figma.root.children) {
     for (const node of page.findAll()) {
-      syncNode(node, exportSetting, result);
+      syncNode(node, exportSettings, result);
     }
   }
 

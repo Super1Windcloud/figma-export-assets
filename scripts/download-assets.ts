@@ -76,11 +76,16 @@ const DOWNLOAD_CONCURRENCY = 8;
 const FIGMA_TOKEN = process.env.FIGMA_TOKEN?.trim();
 const FIGMA_FILE_KEY = process.env.FIGMA_FILE_KEY?.trim();
 const EXPORT_OUTPUT_DIR = process.env.EXPORT_OUTPUT_DIR?.trim();
-const EXPORT_FORMAT = (
+const EXPORT_FORMATS = (
+  process.env.EXPORT_FORMATS ||
   process.env.EXPORT_FORMAT ||
+  process.env.VITE_EXPORT_FORMATS ||
   process.env.VITE_EXPORT_FORMAT ||
-  'PNG'
-).toUpperCase();
+  'PNG,SVG'
+)
+  .split(',')
+  .map((format) => format.trim().toUpperCase())
+  .filter(Boolean);
 const EXPORT_SCALE = Number(
   process.env.EXPORT_SCALE || process.env.VITE_EXPORT_SCALE || '1',
 );
@@ -103,15 +108,20 @@ function requireConfig(name: string, value: string | undefined): string {
   return value;
 }
 
-function readExportConfig(): FigmaExportSetting {
-  if (!['PNG', 'JPG', 'SVG', 'PDF'].includes(EXPORT_FORMAT)) {
+function readExportConfigs(): FigmaExportSetting[] {
+  if (
+    EXPORT_FORMATS.length === 0 ||
+    EXPORT_FORMATS.some(
+      (format) => !['PNG', 'JPG', 'SVG', 'PDF'].includes(format),
+    )
+  ) {
     throw new Error(
-      `EXPORT_FORMAT must be PNG, JPG, SVG or PDF; received "${EXPORT_FORMAT}"`,
+      `EXPORT_FORMATS must contain PNG, JPG, SVG or PDF; received "${EXPORT_FORMATS.join(',')}"`,
     );
   }
 
   if (
-    ['PNG', 'JPG'].includes(EXPORT_FORMAT) &&
+    EXPORT_FORMATS.some((format) => ['PNG', 'JPG'].includes(format)) &&
     (!Number.isFinite(EXPORT_SCALE) || EXPORT_SCALE <= 0 || EXPORT_SCALE > 4)
   ) {
     throw new Error(
@@ -119,13 +129,13 @@ function readExportConfig(): FigmaExportSetting {
     );
   }
 
-  return {
-    format: EXPORT_FORMAT,
+  return [...new Set(EXPORT_FORMATS)].map((format) => ({
+    format,
     suffix: EXPORT_SUFFIX,
-    constraint: ['PNG', 'JPG'].includes(EXPORT_FORMAT)
+    constraint: ['PNG', 'JPG'].includes(format)
       ? { type: 'SCALE', value: EXPORT_SCALE }
       : undefined,
-  };
+  }));
 }
 
 function sanitizePathSegment(value: string): string {
@@ -142,7 +152,7 @@ function getExtension(format: ExportFormat): string {
 
 function collectExports(
   node: FigmaNode,
-  globalSetting: FigmaExportSetting,
+  globalSettings: FigmaExportSetting[],
   parentPath: string[] = [],
   exports: ExportItem[] = [],
   componentSet?: { nodeId: string; name: string },
@@ -151,7 +161,7 @@ function collectExports(
   const currentPath = [...parentPath, nodeName];
   const settings = EXPORT_BASE_COMPONENTS
     ? isBaseComponent(node)
-      ? [globalSetting]
+      ? globalSettings
       : []
     : node.exportSettings || [];
 
@@ -195,7 +205,7 @@ function collectExports(
   for (const child of node.children || [])
     collectExports(
       child,
-      globalSetting,
+      globalSettings,
       currentPath,
       exports,
       childComponentSet,
@@ -412,8 +422,11 @@ function buildManifest(
     generatedAt: new Date().toISOString(),
     figma: { fileKey, fileName },
     export: {
-      format: EXPORT_FORMAT,
-      scale: ['PNG', 'JPG'].includes(EXPORT_FORMAT) ? EXPORT_SCALE : undefined,
+      format: EXPORT_FORMATS[0],
+      formats: [...new Set(EXPORT_FORMATS)],
+      scale: EXPORT_FORMATS.some((format) => ['PNG', 'JPG'].includes(format))
+        ? EXPORT_SCALE
+        : undefined,
       suffix: EXPORT_SUFFIX,
       assetRoot: '.',
     },
@@ -429,7 +442,7 @@ async function main(): Promise<void> {
     process.cwd(),
     requireConfig('EXPORT_OUTPUT_DIR', EXPORT_OUTPUT_DIR),
   );
-  const globalSetting = readExportConfig();
+  const globalSettings = readExportConfigs();
 
   console.log(`Reading Figma file ${fileKey}...`);
   const file = await figmaRequest<FigmaFileResponse>(
@@ -440,7 +453,7 @@ async function main(): Promise<void> {
   const fileOutputDirectory = path.join(outputDirectory, fileDirectoryName);
   const exports: ExportItem[] = [];
   for (const page of file.document.children || [])
-    collectExports(page, globalSetting, [], exports);
+    collectExports(page, globalSettings, [], exports);
   disambiguateFileNames(exports);
 
   if (exports.length === 0) console.log('No exportable nodes were found.');

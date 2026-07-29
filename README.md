@@ -52,7 +52,7 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173), confirm the configuration, 
 1. Paste a Figma `/design`, `/file`, `/proto`, `/board`, or `/slides` URL.
 2. Confirm the automatically extracted `fileName` and `fileKey`.
 3. Enter a personal access token or load it from `.env`.
-4. Select the export format, scale, suffix, output directory, and Nine-Patch behavior.
+4. Select one or more export formats, scale, suffix, output directory, and Nine-Patch behavior.
 5. Enable manifest persistence, Compose generation, or both. These controls are independent.
 6. Start the export and follow the background process from the job panel.
 7. Use the generated files directly from the selected output directory.
@@ -66,7 +66,7 @@ While a job is running, use the stop button in the job panel to terminate the ba
 Copy `.env.example` to `.env`:
 
 ```dotenv
-VITE_EXPORT_FORMAT=PNG
+VITE_EXPORT_FORMATS=PNG,SVG
 VITE_EXPORT_SCALE=1
 VITE_EXPORT_SUFFIX=
 
@@ -81,20 +81,21 @@ COMPOSE_MODULE_NAME=figma-compose-ui
 COMPOSE_PACKAGE_NAME=com.generated.figmaui
 ```
 
-| Variable                    | Default                 | Purpose                                            |
-| --------------------------- | ----------------------- | -------------------------------------------------- |
-| `VITE_EXPORT_FORMAT`        | `PNG`                   | Export format: `PNG`, `JPG`, `SVG`, or `PDF`       |
-| `VITE_EXPORT_SCALE`         | `1`                     | Raster export scale from `0.01` to `4`             |
-| `VITE_EXPORT_SUFFIX`        | Empty                   | Optional suffix added to exported file names       |
-| `FIGMA_TOKEN`               | Empty                   | Personal access token used by the local backend    |
-| `FIGMA_URL`                 | Empty                   | Figma file URL displayed and parsed by the console |
-| `FIGMA_FILE_KEY`            | Empty                   | File key used when no full URL is configured       |
-| `EXPORT_OUTPUT_DIR`         | `./exports`             | Relative or absolute root download directory       |
-| `NINE_PATCH_ENABLED`        | `true`                  | Generate a `.9.png` variant for every PNG          |
-| `DESIGN_MANIFEST_ENABLED`   | `true`                  | Persist `design-manifest.json` in the file folder  |
-| `COMPOSE_GENERATOR_ENABLED` | `false`                 | Generate an Android Compose library module         |
-| `COMPOSE_MODULE_NAME`       | `figma-compose-ui`      | Generated module directory name                    |
-| `COMPOSE_PACKAGE_NAME`      | `com.generated.figmaui` | Kotlin package and Android namespace               |
+| Variable                    | Default                 | Purpose                                             |
+| --------------------------- | ----------------------- | --------------------------------------------------- |
+| `VITE_EXPORT_FORMATS`       | `PNG,SVG`               | Comma-separated formats: `PNG`, `JPG`, `SVG`, `PDF` |
+| `VITE_EXPORT_FORMAT`        | Empty                   | Legacy single-format fallback                       |
+| `VITE_EXPORT_SCALE`         | `1`                     | Raster export scale from `0.01` to `4`              |
+| `VITE_EXPORT_SUFFIX`        | Empty                   | Optional suffix added to exported file names        |
+| `FIGMA_TOKEN`               | Empty                   | Personal access token used by the local backend     |
+| `FIGMA_URL`                 | Empty                   | Figma file URL displayed and parsed by the console  |
+| `FIGMA_FILE_KEY`            | Empty                   | File key used when no full URL is configured        |
+| `EXPORT_OUTPUT_DIR`         | `./exports`             | Relative or absolute root download directory        |
+| `NINE_PATCH_ENABLED`        | `true`                  | Generate a `.9.png` variant for every PNG           |
+| `DESIGN_MANIFEST_ENABLED`   | `true`                  | Persist `design-manifest.json` in the file folder   |
+| `COMPOSE_GENERATOR_ENABLED` | `false`                 | Generate an Android Compose library module          |
+| `COMPOSE_MODULE_NAME`       | `figma-compose-ui`      | Generated module directory name                     |
+| `COMPOSE_PACKAGE_NAME`      | `com.generated.figmaui` | Kotlin package and Android namespace                |
 
 Non-empty `.env` values are loaded into the corresponding form fields when the console starts. Configuration responses use `Cache-Control: no-store`, and `FIGMA_TOKEN` is never embedded in the frontend bundle.
 

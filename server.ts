@@ -17,7 +17,7 @@ interface ExportPayload {
   figmaUrl: string;
   token: string;
   outputDirectory: string;
-  format: ExportFormat;
+  formats: ExportFormat[];
   scale: number;
   suffix: string;
   ninePatchEnabled: boolean;
@@ -93,13 +93,25 @@ function validatePayload(value: unknown): {
     !input.outputDirectory.trim()
   )
     return { error: '请输入下载目录' };
-  if (!['PNG', 'JPG', 'SVG', 'PDF'].includes(String(input.format)))
+  const requestedFormats = Array.isArray(input.formats)
+    ? input.formats
+    : [input.format];
+  if (
+    requestedFormats.length === 0 ||
+    requestedFormats.some(
+      (format) => !['PNG', 'JPG', 'SVG', 'PDF'].includes(String(format)),
+    )
+  )
     return { error: '导出格式无效' };
 
-  const format = input.format as ExportFormat;
+  const formats = [
+    ...new Set(
+      requestedFormats.map((format) => String(format) as ExportFormat),
+    ),
+  ];
   const scale = Number(input.scale);
   if (
-    ['PNG', 'JPG'].includes(format) &&
+    formats.some((format) => ['PNG', 'JPG'].includes(format)) &&
     (!Number.isFinite(scale) || scale <= 0 || scale > 4)
   ) {
     return { error: 'PNG/JPG 导出倍率必须在 0 到 4 之间' };
@@ -122,7 +134,7 @@ function validatePayload(value: unknown): {
       figmaUrl: input.figmaUrl as string,
       token: input.token.trim(),
       outputDirectory: input.outputDirectory.trim(),
-      format,
+      formats,
       scale,
       suffix: typeof input.suffix === 'string' ? input.suffix : '',
       ninePatchEnabled:
@@ -180,7 +192,7 @@ function startExport(payload: ExportPayload): ExportJob {
         FIGMA_TOKEN: payload.token,
         FIGMA_FILE_KEY: parsedUrl.fileKey,
         EXPORT_OUTPUT_DIR: payload.outputDirectory,
-        EXPORT_FORMAT: payload.format,
+        EXPORT_FORMATS: payload.formats.join(','),
         EXPORT_SCALE: String(payload.scale),
         EXPORT_SUFFIX: payload.suffix,
         EXPORT_BASE_COMPONENTS: 'true',
@@ -350,7 +362,14 @@ const server = createServer(async (request, response) => {
             : ''),
         token: process.env.FIGMA_TOKEN?.trim() || '',
         outputDirectory: process.env.EXPORT_OUTPUT_DIR || './exports',
-        format: process.env.VITE_EXPORT_FORMAT || 'PNG',
+        formats: (
+          process.env.VITE_EXPORT_FORMATS ||
+          process.env.VITE_EXPORT_FORMAT ||
+          'PNG,SVG'
+        )
+          .split(',')
+          .map((format) => format.trim().toUpperCase())
+          .filter((format) => ['PNG', 'JPG', 'SVG', 'PDF'].includes(format)),
         scale: Number(process.env.VITE_EXPORT_SCALE || '1'),
         suffix: process.env.VITE_EXPORT_SUFFIX || '',
         ninePatchEnabled: process.env.NINE_PATCH_ENABLED !== 'false',

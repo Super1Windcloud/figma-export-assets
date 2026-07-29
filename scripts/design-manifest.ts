@@ -116,6 +116,7 @@ export interface DesignManifest {
   figma: { fileKey: string; fileName: string };
   export: {
     format: string;
+    formats?: string[];
     scale?: number;
     suffix: string;
     assetRoot: '.';
