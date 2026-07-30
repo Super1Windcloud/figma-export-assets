@@ -1,4 +1,4 @@
-import { isBaseComponent } from './shared/figma-nodes';
+import { isExportableAssetNode } from './shared/figma-nodes';
 
 // Figma plugin entrypoint.
 const EXPORT_FORMAT = import.meta.env.VITE_EXPORT_FORMAT;
@@ -9,8 +9,7 @@ const EXPORT_SUFFIX = import.meta.env.VITE_EXPORT_SUFFIX;
 type SupportedExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
 interface SyncResult {
-  baseComponentsUpdated: number;
-  nonBaseNodesCleared: number;
+  assetsUpdated: number;
   unchanged: number;
   failed: number;
 }
@@ -59,7 +58,12 @@ function syncNode(
   exportSettings: ExportSettings[],
   result: SyncResult,
 ): void {
-  const expected = isBaseComponent(node) ? exportSettings : [];
+  if (!isExportableAssetNode(node)) {
+    result.unchanged += 1;
+    return;
+  }
+
+  const expected = exportSettings;
 
   if (exportSettingsEqual(node.exportSettings, expected)) {
     result.unchanged += 1;
@@ -68,11 +72,7 @@ function syncNode(
 
   try {
     node.exportSettings = expected;
-    if (expected.length > 0) {
-      result.baseComponentsUpdated += 1;
-    } else {
-      result.nonBaseNodesCleared += 1;
-    }
+    result.assetsUpdated += 1;
   } catch (error) {
     result.failed += 1;
     console.warn(
@@ -85,8 +85,7 @@ function syncNode(
 async function syncExportSettings(): Promise<SyncResult> {
   const exportSettings = readExportConfigs();
   const result: SyncResult = {
-    baseComponentsUpdated: 0,
-    nonBaseNodesCleared: 0,
+    assetsUpdated: 0,
     unchanged: 0,
     failed: 0,
   };
@@ -106,8 +105,7 @@ async function main(): Promise<void> {
   try {
     const result = await syncExportSettings();
     const summary = [
-      `${result.baseComponentsUpdated} base components updated`,
-      `${result.nonBaseNodesCleared} non-base nodes cleared`,
+      `${result.assetsUpdated} asset nodes updated`,
       `${result.unchanged} unchanged`,
       `${result.failed} failed`,
     ].join(', ');

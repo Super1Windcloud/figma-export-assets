@@ -6,7 +6,7 @@ The product combines a local web console, a background exporter, a structured de
 
 ## What You Get
 
-- Every `COMPONENT` node is exported, including variants and components that reuse nested instances.
+- Every visible, renderable `COMPONENT` and every visible node explicitly marked for export in Figma is exported. This includes variants, nested-instance components, and designer-selected base resources such as frames, images, groups, and vectors. Hidden and fully empty nodes are skipped.
 - The Figma page and node hierarchy is preserved as local directories.
 - Existing assets are overwritten in place without deleting unrelated files.
 - Every exported PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file.
@@ -105,7 +105,7 @@ Each export creates or reuses one outer directory named after the Figma file und
 
 The exporter always constructs one in-memory manifest contract when either generation stage is enabled. The **Generate design manifest** switch controls whether that contract remains as `design-manifest.json`. The **Generate Compose module** switch starts a separate generator that reads the contract from a file. If Compose generation is enabled while manifest persistence is disabled, the exporter writes a temporary manifest, runs the generator, and removes only that temporary file afterward.
 
-The manifest is the stable boundary between Figma extraction and platform generation. Schema v2 includes a complete `document` tree containing every page and descendant layer, independent of whether a node is exported as an asset. Node entries preserve identity, hierarchy, visibility, bounds, Auto Layout metadata, text, style references, paint/effect data, component references, and mask metadata such as `isMask` and `maskType`. Their `properties` object also retains every source API property not used by the tree identity fields, preventing less common or newly introduced Figma fields from being silently discarded. The existing `components` collection remains the asset-oriented index used by the Compose generator.
+The manifest is the stable boundary between Figma extraction and platform generation. Schema v2 includes a complete `document` tree containing every page and descendant layer, independent of whether a node is exported as an asset. Node entries preserve identity, hierarchy, visibility, bounds, Auto Layout metadata, text, style references, paint/effect data, component references, and mask metadata such as `isMask` and `maskType`. Their `properties` object also retains every source API property not used by the tree identity fields, preventing less common or newly introduced Figma fields from being silently discarded. The `components` collection remains the component index used by the Compose generator, while `resources` records exported non-component base assets.
 
 The generated Android library contains:
 
@@ -156,7 +156,7 @@ The standalone generator reads `COMPOSE_MODULE_NAME` and `COMPOSE_PACKAGE_NAME` 
 
 ## Figma Plugin
 
-The optional plugin synchronizes export metadata inside the Figma file. Every node whose type is `COMPONENT` receives the configured export setting, including variants inside a component set and components that reuse nested instances. Primitive layers, instances, frames, groups, and component-set containers have their export settings removed.
+The optional plugin synchronizes export metadata inside the Figma file. Every `COMPONENT` and every node already marked for export receives the configured format settings. Other nodes are left untouched, so designer-selected primitive layers, frames, and groups are never cleared.
 
 Build the project:
 

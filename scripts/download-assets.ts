@@ -8,10 +8,14 @@ import {
   type DesignManifest,
   type FigmaManifestNode,
   type ManifestComponent,
+  type ManifestResource,
   writeDesignManifest,
 } from './design-manifest';
 import { createNinePatches } from './nine-patch';
-import { isBaseComponent } from '../src/shared/figma-nodes';
+import {
+  isBaseComponent,
+  isRenderableAssetNode,
+} from '../src/shared/figma-nodes';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
@@ -72,6 +76,8 @@ interface FigmaImagesResponse {
 const FIGMA_API_BASE_URL = 'https://api.figma.com/v1';
 const IMAGE_BATCH_SIZE = 50;
 const DOWNLOAD_CONCURRENCY = 8;
+const IMAGE_URL_MAX_ATTEMPTS = 3;
+const IMAGE_URL_RETRY_DELAY_MS = 500;
 
 const FIGMA_TOKEN = process.env.FIGMA_TOKEN?.trim();
 const FIGMA_FILE_KEY = process.env.FIGMA_FILE_KEY?.trim();
@@ -160,7 +166,7 @@ function collectExports(
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
   const settings = EXPORT_BASE_COMPONENTS
-    ? isBaseComponent(node)
+    ? isRenderableAssetNode(node)
       ? globalSettings
       : []
     : node.exportSettings || [];
@@ -278,25 +284,45 @@ async function getDownloadUrls(
 
   for (const group of groupExports(exports)) {
     for (const batch of chunk(group, IMAGE_BATCH_SIZE)) {
-      const query = new URLSearchParams({
-        ids: batch.map((item) => item.nodeId).join(','),
-        format: batch[0].format.toLowerCase(),
-      });
-      if (batch[0].scale !== undefined)
-        query.set('scale', String(batch[0].scale));
+      let pending = batch;
+      for (
+        let attempt = 1;
+        attempt <= IMAGE_URL_MAX_ATTEMPTS && pending.length > 0;
+        attempt += 1
+      ) {
+        const query = new URLSearchParams({
+          ids: pending.map((item) => item.nodeId).join(','),
+          format: pending[0].format.toLowerCase(),
+        });
+        if (pending[0].scale !== undefined)
+          query.set('scale', String(pending[0].scale));
 
-      const response = await figmaRequest<FigmaImagesResponse>(
-        `/images/${fileKey}?${query}`,
-        token,
-      );
-      for (const item of batch) {
-        const url = response.images?.[item.nodeId];
-        if (url) urls.push({ ...item, url });
-        else
-          console.warn(
-            `Figma did not return an export URL for node ${item.nodeId}`,
+        const response = await figmaRequest<FigmaImagesResponse>(
+          `/images/${fileKey}?${query}`,
+          token,
+        );
+        const unresolved: ExportItem[] = [];
+        for (const item of pending) {
+          const url = response.images?.[item.nodeId];
+          if (url) urls.push({ ...item, url });
+          else unresolved.push(item);
+        }
+        pending = unresolved;
+
+        if (pending.length > 0 && attempt < IMAGE_URL_MAX_ATTEMPTS) {
+          console.log(
+            `Retrying ${pending.length} ${batch[0].format} export URLs (attempt ${attempt + 1}/${IMAGE_URL_MAX_ATTEMPTS})...`,
           );
+          await new Promise((resolve) =>
+            setTimeout(resolve, IMAGE_URL_RETRY_DELAY_MS),
+          );
+        }
       }
+
+      for (const item of pending)
+        console.warn(
+          `Figma did not return a ${item.format} export URL for node ${item.nodeId} (${item.nodeName}) after ${IMAGE_URL_MAX_ATTEMPTS} attempts`,
+        );
     }
   }
 
@@ -366,9 +392,9 @@ function buildManifest(
   }
   const ninePatchSet = new Set(ninePatches.map((asset) => path.resolve(asset)));
   const components = new Map<string, ManifestComponent>();
+  const resources = new Map<string, ManifestResource>();
 
   for (const item of exports) {
-    if (components.has(item.nodeId)) continue;
     const source = item.sourceNode;
     const width = source.absoluteBoundingBox?.width;
     const height = source.absoluteBoundingBox?.height;
@@ -383,6 +409,26 @@ function buildManifest(
           : undefined,
       };
     });
+    const dimensions =
+      typeof width === 'number' && typeof height === 'number'
+        ? { width, height }
+        : undefined;
+
+    if (!isBaseComponent(source)) {
+      if (!resources.has(item.nodeId)) {
+        resources.set(item.nodeId, {
+          nodeId: item.nodeId,
+          name: item.nodeName,
+          nodePath: item.nodePath,
+          type: source.type,
+          dimensions,
+          assets,
+        });
+      }
+      continue;
+    }
+
+    if (components.has(item.nodeId)) continue;
     const hasLayout =
       source.layoutMode !== undefined ||
       source.itemSpacing !== undefined ||
@@ -393,10 +439,7 @@ function buildManifest(
       nodePath: item.nodePath,
       type: 'COMPONENT',
       componentSet: item.componentSet,
-      dimensions:
-        typeof width === 'number' && typeof height === 'number'
-          ? { width, height }
-          : undefined,
+      dimensions,
       layout: hasLayout
         ? {
             mode: source.layoutMode,
@@ -432,6 +475,7 @@ function buildManifest(
     },
     document: createManifestNode(document, []),
     components: [...components.values()],
+    resources: [...resources.values()],
   };
 }
 
@@ -459,10 +503,11 @@ async function main(): Promise<void> {
   if (exports.length === 0) console.log('No exportable nodes were found.');
   else
     console.log(
-      `Found ${exports.length} base components. Requesting export URLs...`,
+      `Found ${new Set(exports.map((item) => item.nodeId)).size} asset nodes (${exports.length} files). Requesting export URLs...`,
     );
   const urls =
     exports.length > 0 ? await getDownloadUrls(fileKey, token, exports) : [];
+  const missingUrlCount = exports.length - urls.length;
   const downloaded = await downloadWithConcurrency(urls, fileOutputDirectory);
   let ninePatches: string[] = [];
   if (NINE_PATCH_ENABLED) {
@@ -515,8 +560,12 @@ async function main(): Promise<void> {
     }
   }
   console.log(
-    `Downloaded ${downloaded.length}/${exports.length} assets to ${fileOutputDirectory}`,
+    `Downloaded ${downloaded.length}/${exports.length} files from ${new Set(exports.map((item) => item.nodeId)).size} asset nodes to ${fileOutputDirectory}`,
   );
+  if (missingUrlCount > 0)
+    throw new Error(
+      `Export incomplete: Figma returned no URL for ${missingUrlCount}/${exports.length} requested files after ${IMAGE_URL_MAX_ATTEMPTS} attempts. Partial files and the manifest were preserved.`,
+    );
 }
 
 main().catch((error: unknown) => {

@@ -110,6 +110,15 @@ export interface ManifestComponent {
   assets: ManifestAsset[];
 }
 
+export interface ManifestResource {
+  nodeId: string;
+  name: string;
+  nodePath: string[];
+  type: string;
+  dimensions?: { width: number; height: number };
+  assets: ManifestAsset[];
+}
+
 export interface DesignManifest {
   schemaVersion: number;
   generatedAt: string;
@@ -123,6 +132,7 @@ export interface DesignManifest {
   };
   document: ManifestNode;
   components: ManifestComponent[];
+  resources?: ManifestResource[];
 }
 
 function nodeLayout(node: FigmaManifestNode): ManifestLayout | undefined {
