@@ -6,9 +6,9 @@ The product combines a local web console, a background exporter, a structured de
 
 ## What You Get
 
-- Every visible, renderable `COMPONENT` and every visible node explicitly marked for export in Figma is exported. This includes variants, nested-instance components, and designer-selected base resources such as frames, images, groups, and vectors. Hidden and fully empty nodes are skipped.
+- Every visible, renderable `COMPONENT`, atomic image-fill layer, and explicitly marked graphic resource is exported. Repeated image layers with the same paint and render size are deduplicated. Raster image-fill layers use PNG/JPG while components and explicitly marked vector graphics can use SVG; page/layout frames and mixed-content groups are never flattened into combined assets.
 - The Figma page and node hierarchy is preserved as local directories.
-- Existing assets are overwritten in place without deleting unrelated files.
+- Existing assets are overwritten in place. Files recorded by the previous manifest are removed when the new selection no longer includes them; unrelated files are never deleted.
 - Every exported PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file.
 - A versioned `design-manifest.json` records component identity, hierarchy, dimensions, layout metadata, variants, and exported asset paths.
 - An independent Compose Generator can consume the manifest and create an image-backed Android library module with typed component mappings and previews.
@@ -156,7 +156,7 @@ The standalone generator reads `COMPOSE_MODULE_NAME` and `COMPOSE_PACKAGE_NAME` 
 
 ## Figma Plugin
 
-The optional plugin synchronizes export metadata inside the Figma file. Every `COMPONENT` and every node already marked for export receives the configured format settings. Other nodes are left untouched, so designer-selected primitive layers, frames, and groups are never cleared.
+The optional plugin synchronizes export metadata inside the Figma file. Components, atomic image-fill layers, and explicitly marked graphic resources receive the configured format settings. Export settings are removed from page/layout frames and mixed-content groups so the plugin cannot flatten a composed screen into one asset.
 
 Build the project:
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { generateComposeModule } from './compose-generator';
@@ -9,10 +9,13 @@ import {
   type FigmaManifestNode,
   type ManifestComponent,
   type ManifestResource,
+  readDesignManifest,
   writeDesignManifest,
 } from './design-manifest';
 import { createNinePatches } from './nine-patch';
 import {
+  hasVisibleImageFill,
+  imageAssetDeduplicationKey,
   isBaseComponent,
   isRenderableAssetNode,
 } from '../src/shared/figma-nodes';
@@ -165,11 +168,17 @@ function collectExports(
 ): ExportItem[] {
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
-  const settings = EXPORT_BASE_COMPONENTS
+  let settings = EXPORT_BASE_COMPONENTS
     ? isRenderableAssetNode(node)
       ? globalSettings
       : []
     : node.exportSettings || [];
+
+  if (!isBaseComponent(node) && hasVisibleImageFill(node)) {
+    settings = settings.filter((setting) =>
+      ['PNG', 'JPG'].includes(setting.format?.toUpperCase() || ''),
+    );
+  }
 
   for (const setting of settings) {
     const format = setting.format?.toUpperCase() as ExportFormat | undefined;
@@ -217,6 +226,26 @@ function collectExports(
       childComponentSet,
     );
   return exports;
+}
+
+function deduplicateImageExports(exports: ExportItem[]): void {
+  const preferredNodeByImage = new Map<string, string>();
+  for (const item of exports) {
+    if (isBaseComponent(item.sourceNode)) continue;
+    const key = imageAssetDeduplicationKey(item.sourceNode);
+    if (!key) continue;
+    const current = preferredNodeByImage.get(key);
+    if (!current || (current.startsWith('I') && !item.nodeId.startsWith('I'))) {
+      preferredNodeByImage.set(key, item.nodeId);
+    }
+  }
+
+  const unique = exports.filter((item) => {
+    if (isBaseComponent(item.sourceNode)) return true;
+    const key = imageAssetDeduplicationKey(item.sourceNode);
+    return !key || preferredNodeByImage.get(key) === item.nodeId;
+  });
+  exports.splice(0, exports.length, ...unique);
 }
 
 function disambiguateFileNames(exports: ExportItem[]): void {
@@ -375,6 +404,62 @@ function relativeAssetPath(root: string, target: string): string {
   return path.relative(root, target).split(path.sep).join('/');
 }
 
+function expectedAssetPaths(exports: ExportItem[]): Set<string> {
+  const expected = new Set<string>();
+  for (const item of exports) {
+    const relativePath = path.join(...item.directory, item.fileName);
+    expected.add(relativePath);
+    if (NINE_PATCH_ENABLED && item.format === 'PNG') {
+      expected.add(relativePath.replace(/\.png$/i, '.9.png'));
+    }
+  }
+  return expected;
+}
+
+async function pruneStaleGeneratedAssets(
+  manifestPath: string,
+  outputDirectory: string,
+  expected: Set<string>,
+): Promise<number> {
+  let previous: DesignManifest;
+  try {
+    previous = await readDesignManifest(manifestPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`Could not read the previous manifest: ${String(error)}`);
+    }
+    return 0;
+  }
+
+  const previousPaths = new Set<string>();
+  for (const entry of [...previous.components, ...(previous.resources || [])]) {
+    for (const asset of entry.assets) {
+      previousPaths.add(asset.relativePath);
+      if (asset.ninePatchRelativePath) {
+        previousPaths.add(asset.ninePatchRelativePath);
+      }
+    }
+  }
+
+  const root = path.resolve(outputDirectory);
+  let removed = 0;
+  for (const relativePath of previousPaths) {
+    if (expected.has(relativePath)) continue;
+    const target = path.resolve(root, relativePath);
+    if (target === root || !target.startsWith(`${root}${path.sep}`)) {
+      console.warn(`Skipping unsafe stale asset path: ${relativePath}`);
+      continue;
+    }
+    try {
+      await unlink(target);
+      removed += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  return removed;
+}
+
 function buildManifest(
   fileKey: string,
   fileName: string,
@@ -495,10 +580,20 @@ async function main(): Promise<void> {
   );
   const fileDirectoryName = sanitizePathSegment(file.name || fileKey);
   const fileOutputDirectory = path.join(outputDirectory, fileDirectoryName);
+  const manifestPath = path.join(fileOutputDirectory, 'design-manifest.json');
   const exports: ExportItem[] = [];
   for (const page of file.document.children || [])
     collectExports(page, globalSettings, [], exports);
+  deduplicateImageExports(exports);
   disambiguateFileNames(exports);
+  const staleAssetCount = await pruneStaleGeneratedAssets(
+    manifestPath,
+    fileOutputDirectory,
+    expectedAssetPaths(exports),
+  );
+  if (staleAssetCount > 0) {
+    console.log(`Removed ${staleAssetCount} stale generated assets.`);
+  }
 
   if (exports.length === 0) console.log('No exportable nodes were found.');
   else
@@ -526,7 +621,6 @@ async function main(): Promise<void> {
     downloaded,
     ninePatches,
   );
-  const manifestPath = path.join(fileOutputDirectory, 'design-manifest.json');
   let generatorManifestPath = manifestPath;
   let temporaryDirectory: string | undefined;
   if (DESIGN_MANIFEST_ENABLED) {

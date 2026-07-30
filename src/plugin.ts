@@ -10,6 +10,7 @@ type SupportedExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 
 interface SyncResult {
   assetsUpdated: number;
+  compositeSettingsCleared: number;
   unchanged: number;
   failed: number;
 }
@@ -58,12 +59,13 @@ function syncNode(
   exportSettings: ExportSettings[],
   result: SyncResult,
 ): void {
-  if (!isExportableAssetNode(node)) {
+  const exportable = isExportableAssetNode(node);
+  const expected = exportable ? exportSettings : [];
+
+  if (!exportable && node.exportSettings.length === 0) {
     result.unchanged += 1;
     return;
   }
-
-  const expected = exportSettings;
 
   if (exportSettingsEqual(node.exportSettings, expected)) {
     result.unchanged += 1;
@@ -72,7 +74,8 @@ function syncNode(
 
   try {
     node.exportSettings = expected;
-    result.assetsUpdated += 1;
+    if (exportable) result.assetsUpdated += 1;
+    else result.compositeSettingsCleared += 1;
   } catch (error) {
     result.failed += 1;
     console.warn(
@@ -86,6 +89,7 @@ async function syncExportSettings(): Promise<SyncResult> {
   const exportSettings = readExportConfigs();
   const result: SyncResult = {
     assetsUpdated: 0,
+    compositeSettingsCleared: 0,
     unchanged: 0,
     failed: 0,
   };
@@ -106,6 +110,7 @@ async function main(): Promise<void> {
     const result = await syncExportSettings();
     const summary = [
       `${result.assetsUpdated} asset nodes updated`,
+      `${result.compositeSettingsCleared} composite settings cleared`,
       `${result.unchanged} unchanged`,
       `${result.failed} failed`,
     ].join(', ');

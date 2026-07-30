@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  imageAssetDeduplicationKey,
   isBaseComponent,
   isExportableAssetNode,
   isRenderableAssetNode,
@@ -53,24 +54,66 @@ test('rejects every non-component node type', () => {
   );
 });
 
-test('exports components and nodes explicitly marked by designers', () => {
+test('exports components, atomic image layers, and explicit graphic resources', () => {
   assert.equal(isExportableAssetNode({ type: 'COMPONENT' }), true);
   assert.equal(
-    isExportableAssetNode({ type: 'RECTANGLE', exportSettings: [{}] }),
+    isExportableAssetNode({
+      type: 'RECTANGLE',
+      fills: [{ type: 'IMAGE', imageRef: 'image-ref' }],
+    }),
     true,
   );
   assert.equal(
-    isExportableAssetNode({ type: 'FRAME', exportSettings: [] }),
+    isExportableAssetNode({
+      type: 'VECTOR',
+      exportSettings: [{}],
+    }),
+    true,
+  );
+  assert.equal(
+    isExportableAssetNode({
+      type: 'FRAME',
+      fills: [{ type: 'IMAGE', imageRef: 'composite-preview' }],
+      exportSettings: [{}],
+      children: [{ type: 'TEXT' }],
+    }),
     false,
   );
   assert.equal(isExportableAssetNode({ type: 'VECTOR' }), false);
   assert.equal(
     isExportableAssetNode({
       type: 'GROUP',
-      visible: false,
       exportSettings: [{}],
+      children: [{ type: 'ELLIPSE' }, { type: 'VECTOR' }],
+    }),
+    true,
+  );
+  assert.equal(
+    isExportableAssetNode({
+      type: 'GROUP',
+      exportSettings: [{}],
+      children: [{ type: 'TEXT' }, { type: 'VECTOR' }],
     }),
     false,
+  );
+});
+
+test('builds stable image deduplication keys from paint and render size', () => {
+  const base = {
+    type: 'RECTANGLE',
+    fills: [{ type: 'IMAGE', imageRef: 'same-image', scaleMode: 'FILL' }],
+    absoluteBoundingBox: { width: 40, height: 40 },
+  };
+  assert.equal(
+    imageAssetDeduplicationKey(base),
+    imageAssetDeduplicationKey({ ...base, id: 'another-instance' }),
+  );
+  assert.notEqual(
+    imageAssetDeduplicationKey(base),
+    imageAssetDeduplicationKey({
+      ...base,
+      absoluteBoundingBox: { width: 80, height: 80 },
+    }),
   );
 });
 
