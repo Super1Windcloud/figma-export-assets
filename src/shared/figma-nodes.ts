@@ -7,6 +7,14 @@ export interface FigmaTreeNode {
   fills?: unknown;
   strokes?: unknown;
   effects?: unknown;
+  opacity?: number;
+  blendMode?: string;
+  cornerRadius?: unknown;
+  rectangleCornerRadii?: unknown;
+  strokeWeight?: unknown;
+  strokeAlign?: unknown;
+  individualStrokeWeights?: unknown;
+  rotation?: number;
 }
 
 export function isBaseComponent(node: FigmaTreeNode): boolean {
@@ -62,10 +70,7 @@ export function isExportableAssetNode(node: FigmaTreeNode): boolean {
   if (node.visible === false) return false;
   if (isBaseComponent(node)) return true;
 
-  if (
-    ATOMIC_GRAPHIC_NODE_TYPES.has(node.type) &&
-    hasVisibleImageFill(node)
-  ) {
+  if (ATOMIC_GRAPHIC_NODE_TYPES.has(node.type) && hasVisibleImageFill(node)) {
     return true;
   }
 
@@ -85,13 +90,18 @@ export function imageAssetDeduplicationKey(
   if (!paints.length) return undefined;
 
   return JSON.stringify({
-    paints: paints.map((paint) => ({
-      imageRef: paint.imageRef,
-      scaleMode: paint.scaleMode,
-      imageTransform: paint.imageTransform,
-      rotation: paint.rotation,
-      scalingFactor: paint.scalingFactor,
-    })),
+    type: node.type,
+    fills: node.fills,
+    strokes: node.strokes,
+    effects: node.effects,
+    opacity: node.opacity,
+    blendMode: node.blendMode,
+    cornerRadius: node.cornerRadius,
+    rectangleCornerRadii: node.rectangleCornerRadii,
+    strokeWeight: node.strokeWeight,
+    strokeAlign: node.strokeAlign,
+    individualStrokeWeights: node.individualStrokeWeights,
+    rotation: node.rotation,
     width: node.absoluteBoundingBox?.width,
     height: node.absoluteBoundingBox?.height,
   });
@@ -110,6 +120,7 @@ function hasVisibleStyle(styles: unknown): boolean {
 
 export function isRenderableAssetNode(node: FigmaTreeNode): boolean {
   if (!isExportableAssetNode(node)) return false;
+  if (node.opacity === 0) return false;
   if (!node.children?.length) return true;
 
   const hasVisibleChild = node.children.some(

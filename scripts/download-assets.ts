@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { generateComposeModule } from './compose-generator';
@@ -9,10 +9,15 @@ import {
   type FigmaManifestNode,
   type ManifestComponent,
   type ManifestResource,
-  readDesignManifest,
   writeDesignManifest,
 } from './design-manifest';
 import { createNinePatches } from './nine-patch';
+import {
+  commitStagedFiles,
+  generatedAssetPaths,
+  pruneStaleGeneratedAssets,
+  removeGeneratedManifest,
+} from './export-files';
 import {
   hasVisibleImageFill,
   imageAssetDeduplicationKey,
@@ -404,62 +409,6 @@ function relativeAssetPath(root: string, target: string): string {
   return path.relative(root, target).split(path.sep).join('/');
 }
 
-function expectedAssetPaths(exports: ExportItem[]): Set<string> {
-  const expected = new Set<string>();
-  for (const item of exports) {
-    const relativePath = path.join(...item.directory, item.fileName);
-    expected.add(relativePath);
-    if (NINE_PATCH_ENABLED && item.format === 'PNG') {
-      expected.add(relativePath.replace(/\.png$/i, '.9.png'));
-    }
-  }
-  return expected;
-}
-
-async function pruneStaleGeneratedAssets(
-  manifestPath: string,
-  outputDirectory: string,
-  expected: Set<string>,
-): Promise<number> {
-  let previous: DesignManifest;
-  try {
-    previous = await readDesignManifest(manifestPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`Could not read the previous manifest: ${String(error)}`);
-    }
-    return 0;
-  }
-
-  const previousPaths = new Set<string>();
-  for (const entry of [...previous.components, ...(previous.resources || [])]) {
-    for (const asset of entry.assets) {
-      previousPaths.add(asset.relativePath);
-      if (asset.ninePatchRelativePath) {
-        previousPaths.add(asset.ninePatchRelativePath);
-      }
-    }
-  }
-
-  const root = path.resolve(outputDirectory);
-  let removed = 0;
-  for (const relativePath of previousPaths) {
-    if (expected.has(relativePath)) continue;
-    const target = path.resolve(root, relativePath);
-    if (target === root || !target.startsWith(`${root}${path.sep}`)) {
-      console.warn(`Skipping unsafe stale asset path: ${relativePath}`);
-      continue;
-    }
-    try {
-      await unlink(target);
-      removed += 1;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-  }
-  return removed;
-}
-
 function buildManifest(
   fileKey: string,
   fileName: string,
@@ -586,15 +535,6 @@ async function main(): Promise<void> {
     collectExports(page, globalSettings, [], exports);
   deduplicateImageExports(exports);
   disambiguateFileNames(exports);
-  const staleAssetCount = await pruneStaleGeneratedAssets(
-    manifestPath,
-    fileOutputDirectory,
-    expectedAssetPaths(exports),
-  );
-  if (staleAssetCount > 0) {
-    console.log(`Removed ${staleAssetCount} stale generated assets.`);
-  }
-
   if (exports.length === 0) console.log('No exportable nodes were found.');
   else
     console.log(
@@ -603,14 +543,67 @@ async function main(): Promise<void> {
   const urls =
     exports.length > 0 ? await getDownloadUrls(fileKey, token, exports) : [];
   const missingUrlCount = exports.length - urls.length;
-  const downloaded = await downloadWithConcurrency(urls, fileOutputDirectory);
-  let ninePatches: string[] = [];
-  if (NINE_PATCH_ENABLED) {
-    console.log('Generating Nine-Patch variants with ImageMagick...');
-    ninePatches = await createNinePatches(
-      downloaded.map((asset) => asset.destination),
+  if (missingUrlCount > 0)
+    throw new Error(
+      `Export incomplete: Figma returned no URL for ${missingUrlCount}/${exports.length} requested files after ${IMAGE_URL_MAX_ATTEMPTS} attempts. Existing generated assets were left unchanged.`,
     );
-    console.log(`Generated ${ninePatches.length} Nine-Patch assets.`);
+
+  await mkdir(fileOutputDirectory, { recursive: true });
+  const stagingDirectory = await mkdtemp(
+    path.join(os.tmpdir(), 'figma-asset-export-'),
+  );
+  let downloaded: DownloadedAsset[] = [];
+  let ninePatches: string[] = [];
+  try {
+    const stagedDownloads = await downloadWithConcurrency(
+      urls,
+      stagingDirectory,
+    );
+    let stagedNinePatches: string[] = [];
+    if (NINE_PATCH_ENABLED) {
+      console.log('Generating Nine-Patch variants with ImageMagick...');
+      stagedNinePatches = await createNinePatches(
+        stagedDownloads.map((asset) => asset.destination),
+      );
+      console.log(`Generated ${stagedNinePatches.length} Nine-Patch assets.`);
+    }
+
+    const committedPaths = await commitStagedFiles(
+      stagingDirectory,
+      fileOutputDirectory,
+      [
+        ...stagedDownloads.map((asset) => asset.destination),
+        ...stagedNinePatches,
+      ],
+    );
+    const committedByStagedPath = new Map(
+      [
+        ...stagedDownloads.map((asset) => asset.destination),
+        ...stagedNinePatches,
+      ].map((stagedPath, index) => [stagedPath, committedPaths[index]]),
+    );
+    downloaded = stagedDownloads.map((asset) => ({
+      ...asset,
+      destination: committedByStagedPath.get(asset.destination)!,
+    }));
+    ninePatches = stagedNinePatches.map((asset) =>
+      committedByStagedPath.get(asset)!,
+    );
+
+    const expected = generatedAssetPaths(fileOutputDirectory, [
+      ...downloaded.map((asset) => asset.destination),
+      ...ninePatches,
+    ]);
+    const staleAssetCount = await pruneStaleGeneratedAssets(
+      manifestPath,
+      fileOutputDirectory,
+      expected,
+    );
+    if (staleAssetCount > 0) {
+      console.log(`Removed ${staleAssetCount} stale generated assets.`);
+    }
+  } finally {
+    await rm(stagingDirectory, { recursive: true, force: true });
   }
   const manifest = buildManifest(
     fileKey,
@@ -653,13 +646,12 @@ async function main(): Promise<void> {
         await rm(temporaryDirectory, { recursive: true, force: true });
     }
   }
+  if (!DESIGN_MANIFEST_ENABLED) {
+    await removeGeneratedManifest(manifestPath);
+  }
   console.log(
     `Downloaded ${downloaded.length}/${exports.length} files from ${new Set(exports.map((item) => item.nodeId)).size} asset nodes to ${fileOutputDirectory}`,
   );
-  if (missingUrlCount > 0)
-    throw new Error(
-      `Export incomplete: Figma returned no URL for ${missingUrlCount}/${exports.length} requested files after ${IMAGE_URL_MAX_ATTEMPTS} attempts. Partial files and the manifest were preserved.`,
-    );
 }
 
 main().catch((error: unknown) => {

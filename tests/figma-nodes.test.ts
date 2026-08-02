@@ -115,9 +115,25 @@ test('builds stable image deduplication keys from paint and render size', () => 
       absoluteBoundingBox: { width: 80, height: 80 },
     }),
   );
+  assert.notEqual(
+    imageAssetDeduplicationKey(base),
+    imageAssetDeduplicationKey({ ...base, cornerRadius: 12 }),
+  );
+  assert.notEqual(
+    imageAssetDeduplicationKey(base),
+    imageAssetDeduplicationKey({
+      ...base,
+      effects: [{ type: 'DROP_SHADOW', radius: 8 }],
+    }),
+  );
+  assert.notEqual(
+    imageAssetDeduplicationKey(base),
+    imageAssetDeduplicationKey({ ...base, type: 'ELLIPSE' }),
+  );
 });
 
 test('skips exportable containers that render as empty', () => {
+  assert.equal(isRenderableAssetNode({ type: 'COMPONENT', opacity: 0 }), false);
   assert.equal(
     isRenderableAssetNode({
       type: 'COMPONENT',
