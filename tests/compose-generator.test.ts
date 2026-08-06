@@ -48,9 +48,7 @@ function exampleManifest(): DesignManifest {
                 itemSpacing: 8,
                 padding: { top: 12, right: 16, bottom: 12, left: 16 },
               },
-              fills: [
-                { type: 'SOLID', color: { r: 0.1, g: 0.2, b: 0.8 } },
-              ],
+              fills: [{ type: 'SOLID', color: { r: 0.1, g: 0.2, b: 0.8 } }],
               cornerRadius: 8,
               properties: {},
               children: [
@@ -81,9 +79,7 @@ function exampleManifest(): DesignManifest {
                   type: 'TEXT',
                   characters: 'Continue',
                   bounds: { x: 16, y: 12, width: 88, height: 24 },
-                  fills: [
-                    { type: 'SOLID', color: { r: 1, g: 1, b: 1 } },
-                  ],
+                  fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }],
                   textStyle: { fontSize: 16, fontWeight: 600 },
                   properties: {},
                 },
@@ -124,6 +120,23 @@ function exampleManifest(): DesignManifest {
         assets: [],
       },
     ],
+    resources: [
+      {
+        nodeId: '34:244',
+        name: 'Home',
+        nodePath: ['Screens', 'Home'],
+        type: 'FRAME',
+        assets: [
+          {
+            format: 'PNG',
+            source: 'IMAGE_FILL',
+            imageRef: 'home-background-ref',
+            paintIndex: 0,
+            relativePath: 'Screens/Home/background.png',
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -139,44 +152,98 @@ test('generates a Compose module by consuming only the manifest contract', async
       'Primary Button.png',
     );
     const ninePatchAsset = originalAsset.replace(/\.png$/, '.9.png');
+    const backgroundAsset = path.join(
+      directory,
+      'Screens',
+      'Home',
+      'background.png',
+    );
     await writeDesignManifest(manifestPath, manifest);
     await mkdir(path.dirname(originalAsset), { recursive: true });
     await writeFile(originalAsset, new Uint8Array([1, 2, 3]));
     await writeFile(ninePatchAsset, new Uint8Array([4, 5, 6]));
+    await mkdir(path.dirname(backgroundAsset), { recursive: true });
+    await writeFile(backgroundAsset, new Uint8Array([7, 8, 9]));
 
     const result = await generateComposeModule(manifestPath, {
       outputDirectory: directory,
       moduleName: 'design-ui',
       packageName: 'com.example.designui',
+      compileSdk: 36,
+      minSdk: 24,
+      composeBomVersion: '2026.06.01',
     });
 
     assert.equal(result.componentCount, 2);
     assert.equal(result.semanticComponentCount, 2);
     assert.equal(result.fallbackOnlyComponentCount, 0);
-    assert.equal(result.resourceCount, 2);
-    const kotlinPath = path.join(
+    assert.equal(result.resourceCount, 3);
+    assert.equal(result.designResourceCount, 1);
+    const registryPath = path.join(
       result.moduleDirectory,
-      'src/main/java/com/example/designui/FigmaComponents.kt',
+      'src/main/java/com/example/designui/FigmaComponentRegistry.kt',
     );
-    const kotlin = await readFile(kotlinPath, 'utf8');
+    const componentPath = path.join(
+      result.moduleDirectory,
+      'src/main/java/com/example/designui/components/buttons/FigmaPrimaryButton12_34.kt',
+    );
+    const runtimePath = path.join(
+      result.moduleDirectory,
+      'src/main/java/com/example/designui/runtime/FigmaRuntime.kt',
+    );
+    const colorsPath = path.join(
+      result.moduleDirectory,
+      'src/main/java/com/example/designui/tokens/FigmaColors.kt',
+    );
+    const assetsPath = path.join(
+      result.moduleDirectory,
+      'src/main/java/com/example/designui/assets/FigmaAssets.kt',
+    );
+    const registry = await readFile(registryPath, 'utf8');
+    const component = await readFile(componentPath, 'utf8');
+    const runtime = await readFile(runtimePath, 'utf8');
+    const colors = await readFile(colorsPath, 'utf8');
+    const assets = await readFile(assetsPath, 'utf8');
     const buildGradle = await readFile(
       path.join(result.moduleDirectory, 'build.gradle.kts'),
       'utf8',
     );
-    assert.match(kotlin, /enum class FigmaComponent/);
-    assert.match(kotlin, /PRIMARY_BUTTON/);
-    assert.match(kotlin, /COMPONENT_12_35/);
-    assert.match(kotlin, /fun FigmaComponentUi/);
-    assert.match(kotlin, /fun FigmaPrimaryButton12_34/);
-    assert.match(kotlin, /layoutMode = "HORIZONTAL"/);
-    assert.match(kotlin, /characters = "Continue"/);
-    assert.match(kotlin, /isMask = true/);
+    assert.match(registry, /enum class FigmaComponent/);
+    assert.match(registry, /PRIMARY_BUTTON/);
+    assert.match(registry, /COMPONENT_12_35/);
+    assert.match(registry, /fun FigmaComponentUi/);
+    assert.match(component, /fun FigmaPrimaryButton12_34/);
+    assert.match(component, /layoutMode = "HORIZONTAL"/);
+    assert.match(component, /characters = "Continue"/);
+    assert.match(component, /isMask = true/);
+    assert.match(component, /FigmaColors\.ColorFF1A33CC/);
+    assert.match(runtime, /data class GeneratedFigmaNode/);
+    assert.match(colors, /ColorFF1A33CC/);
+    assert.match(assets, /enum class FigmaAsset/);
+    assert.match(assets, /home-background-ref/);
     assert.match(buildGradle, /JavaVersion\.VERSION_17/);
     assert.match(buildGradle, /jvmToolchain\(17\)/);
+    assert.match(buildGradle, /compileSdk = 36/);
+    assert.match(buildGradle, /minSdk = 24/);
+    assert.match(buildGradle, /compose-bom:2026\.06\.01/);
     await access(
       path.join(
         result.moduleDirectory,
         'src/main/res/drawable-nodpi/figma_primary_button_12_34.png',
+      ),
+    );
+    await access(
+      path.join(
+        result.moduleDirectory,
+        'src/main/res/drawable-nodpi/figma_asset_home_34_244_1.png',
+      ),
+    );
+    await assert.rejects(
+      access(
+        path.join(
+          result.moduleDirectory,
+          'src/main/java/com/example/designui/FigmaComponents.kt',
+        ),
       ),
     );
     await access(

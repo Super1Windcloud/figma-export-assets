@@ -79,6 +79,9 @@ DESIGN_MANIFEST_ENABLED=true
 COMPOSE_GENERATOR_ENABLED=false
 COMPOSE_MODULE_NAME=figma-compose-ui
 COMPOSE_PACKAGE_NAME=com.generated.figmaui
+COMPOSE_COMPILE_SDK=35
+COMPOSE_MIN_SDK=23
+COMPOSE_BOM_VERSION=2025.08.01
 ```
 
 | Variable                    | Default                 | Purpose                                             |
@@ -96,6 +99,9 @@ COMPOSE_PACKAGE_NAME=com.generated.figmaui
 | `COMPOSE_GENERATOR_ENABLED` | `false`                 | Generate an Android Compose library module          |
 | `COMPOSE_MODULE_NAME`       | `figma-compose-ui`      | Generated module directory name                     |
 | `COMPOSE_PACKAGE_NAME`      | `com.generated.figmaui` | Kotlin package and Android namespace                |
+| `COMPOSE_COMPILE_SDK`       | `35`                    | Generated Android module compile SDK                |
+| `COMPOSE_MIN_SDK`           | `23`                    | Generated Android module minimum SDK                |
+| `COMPOSE_BOM_VERSION`       | `2025.08.01`            | Compose BOM used by the standalone generated module |
 
 ### Choosing a raster scale
 
@@ -119,13 +125,17 @@ The manifest is the stable boundary between Figma extraction and platform genera
 The generated Android library contains:
 
 - A host-project-compatible `build.gradle.kts`
-- Semantic component composables generated from the manifest layer tree
+- One semantic composable file per Figma component, grouped by component set
+- Separate `runtime`, `tokens`, `assets`, `catalog`, and component packages
+- A typed `FigmaAsset` index for exported base resources and Frame backgrounds
 - `Row`, `Column`, and `Box` mappings for Auto Layout and free-positioned layers
 - Text, solid fills, opacity, rounded corners, borders, sizing, spacing, and basic geometric masks
 - Original PNG or JPG drawable resources and available Nine-Patch variants as explicit fallbacks
 - A typed `FigmaComponent` enum
 - Reusable `FigmaComponentUi`, `FigmaComponentImage`, and `FigmaComponentCatalog` composables
 - An Android Studio preview
+
+The generated library is fully generator-owned and is replaced on regeneration. Keep hand-written business APIs, callbacks, accessibility semantics, and state adapters in a separate design-system or feature module that depends on the generated library. This keeps Figma node changes out of application-facing contracts.
 
 `FigmaComponentUi` is the default catalog renderer. `FigmaComponentImage` remains available when a caller explicitly needs the original raster reference. Complex vector geometry, gradient/image fills, arbitrary alpha masks, effects, fonts, interaction, accessibility semantics, and business state still require project-specific implementation; the generator does not silently replace those semantics with a raster image.
 

@@ -126,6 +126,10 @@ const COMPOSE_MODULE_NAME =
   process.env.COMPOSE_MODULE_NAME?.trim() || 'figma-compose-ui';
 const COMPOSE_PACKAGE_NAME =
   process.env.COMPOSE_PACKAGE_NAME?.trim() || 'com.generated.figmaui';
+const COMPOSE_COMPILE_SDK = Number(process.env.COMPOSE_COMPILE_SDK || '35');
+const COMPOSE_MIN_SDK = Number(process.env.COMPOSE_MIN_SDK || '23');
+const COMPOSE_BOM_VERSION =
+  process.env.COMPOSE_BOM_VERSION?.trim() || '2025.08.01';
 
 function requireConfig(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is required in .env`);
@@ -736,9 +740,12 @@ async function main(): Promise<void> {
         moduleName: COMPOSE_MODULE_NAME,
         packageName: COMPOSE_PACKAGE_NAME,
         assetRoot: fileOutputDirectory,
+        compileSdk: COMPOSE_COMPILE_SDK,
+        minSdk: COMPOSE_MIN_SDK,
+        composeBomVersion: COMPOSE_BOM_VERSION,
       });
       console.log(
-        `Generated Compose module with ${result.semanticComponentCount}/${result.componentCount} semantic components, ${result.fallbackOnlyComponentCount} fallback-only components, and ${result.resourceCount} fallback resources at ${result.moduleDirectory}`,
+        `Generated Compose module with ${result.semanticComponentCount}/${result.componentCount} semantic components, ${result.fallbackOnlyComponentCount} fallback-only components, ${result.designResourceCount} design resources, and ${result.resourceCount} Android resources at ${result.moduleDirectory}`,
       );
     } finally {
       if (temporaryDirectory)
