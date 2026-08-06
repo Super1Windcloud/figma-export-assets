@@ -4,6 +4,7 @@ import {
   imageAssetDeduplicationKey,
   isBaseComponent,
   isExportableAssetNode,
+  isImageFillContainerResourceNode,
   isRenderableAssetNode,
 } from '../src/shared/figma-nodes';
 
@@ -17,6 +18,24 @@ test('accepts a component composed of primitive layers', () => {
       ],
     }),
     true,
+  );
+});
+
+test('recognizes image-filled frames as raw background resources', () => {
+  assert.equal(
+    isImageFillContainerResourceNode({
+      type: 'FRAME',
+      fills: [{ type: 'IMAGE', imageRef: 'background-ref' }],
+      children: [{ type: 'TEXT' }],
+    }),
+    true,
+  );
+  assert.equal(
+    isImageFillContainerResourceNode({
+      type: 'RECTANGLE',
+      fills: [{ type: 'IMAGE', imageRef: 'atomic-ref' }],
+    }),
+    false,
   );
 });
 

@@ -127,3 +127,31 @@ test('rejects staged paths outside the staging directory', async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('validates every staged source before replacing existing output', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'export-files-test-'));
+  const staging = path.join(directory, 'staging');
+  const output = path.join(directory, 'output');
+  try {
+    const firstRelativePath = 'Components/first.png';
+    await mkdir(path.join(staging, 'Components'), { recursive: true });
+    await mkdir(path.join(output, 'Components'), { recursive: true });
+    await writeFile(path.join(staging, firstRelativePath), 'new');
+    await writeFile(path.join(output, firstRelativePath), 'old');
+
+    await assert.rejects(
+      commitStagedFiles(staging, output, [
+        path.join(staging, firstRelativePath),
+        path.join(staging, 'Components/missing.png'),
+      ]),
+      /ENOENT/,
+    );
+
+    assert.equal(
+      await readFile(path.join(output, firstRelativePath), 'utf8'),
+      'old',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

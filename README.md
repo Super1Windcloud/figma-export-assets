@@ -6,10 +6,10 @@ The product combines a local web console, a background exporter, a structured de
 
 ## What You Get
 
-- Every visible, renderable `COMPONENT`, atomic image-fill layer, and explicitly marked graphic resource is exported. Repeated image layers with the same paint and render size are deduplicated. Raster image-fill layers use PNG/JPG while components and explicitly marked vector graphics can use SVG; page/layout frames and mixed-content groups are never flattened into combined assets.
+- Every visible, renderable `COMPONENT`, atomic image-fill layer, explicitly marked graphic resource, and unique image-filled Frame background is exported. Frame backgrounds retain the original uploaded PNG/JPG bytes; their child layers are never flattened into the background. Repeated image layers with the same paint and render size are deduplicated. Raster image-fill layers use PNG/JPG while components and explicitly marked vector graphics can use SVG; page/layout frames and mixed-content groups are never flattened into combined assets.
 - The Figma page and node hierarchy is preserved as local directories.
 - Existing assets are overwritten in place. Files recorded by the previous manifest are removed when the new selection no longer includes them; unrelated files are never deleted.
-- Every exported PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file.
+- Every node-rendered PNG is preserved as a regular image and can also produce a matching Android Nine-Patch file. Original Frame backgrounds remain ordinary PNG/JPG resources.
 - A versioned `design-manifest.json` records component identity, hierarchy, dimensions, layout metadata, variants, and exported asset paths.
 - An independent Compose Generator can consume the manifest and create an image-backed Android library module with typed component mappings and previews.
 - Job progress, skipped assets, conversion fallbacks, and failures are shown in the console.
@@ -67,7 +67,7 @@ Copy `.env.example` to `.env`:
 
 ```dotenv
 VITE_EXPORT_FORMATS=PNG,SVG
-VITE_EXPORT_SCALE=1
+VITE_EXPORT_SCALE=4
 VITE_EXPORT_SUFFIX=
 
 FIGMA_TOKEN=
@@ -85,7 +85,7 @@ COMPOSE_PACKAGE_NAME=com.generated.figmaui
 | --------------------------- | ----------------------- | --------------------------------------------------- |
 | `VITE_EXPORT_FORMATS`       | `PNG,SVG`               | Comma-separated formats: `PNG`, `JPG`, `SVG`, `PDF` |
 | `VITE_EXPORT_FORMAT`        | Empty                   | Legacy single-format fallback                       |
-| `VITE_EXPORT_SCALE`         | `1`                     | Raster export scale from `0.01` to `4`              |
+| `VITE_EXPORT_SCALE`         | `4`                     | Raster export scale from `0.01` to `4`              |
 | `VITE_EXPORT_SUFFIX`        | Empty                   | Optional suffix added to exported file names        |
 | `FIGMA_TOKEN`               | Empty                   | Personal access token used by the local backend     |
 | `FIGMA_URL`                 | Empty                   | Figma file URL displayed and parsed by the console  |
@@ -96,6 +96,15 @@ COMPOSE_PACKAGE_NAME=com.generated.figmaui
 | `COMPOSE_GENERATOR_ENABLED` | `false`                 | Generate an Android Compose library module          |
 | `COMPOSE_MODULE_NAME`       | `figma-compose-ui`      | Generated module directory name                     |
 | `COMPOSE_PACKAGE_NAME`      | `com.generated.figmaui` | Kotlin package and Android namespace                |
+
+### Choosing a raster scale
+
+The scale applies only when Figma renders a node to PNG or JPG. SVG/PDF and original Frame image fills do not use it.
+
+- Use `1x` for web/CSS pixels, mdpi Android resources, visual references, or when the bitmap is not shipped as the final UI asset.
+- Use `2x`, `3x`, and `4x` for Android `drawable-hdpi`, `drawable-xxhdpi`, and `drawable-xxxhdpi` respectively. Export each density separately when the project keeps density-specific directories.
+- Use `4x` when producing one high-resolution master for `drawable-nodpi`, then size it explicitly in Compose. This project defaults to that Compose-oriented workflow; it costs more APK size and memory than density-specific exports.
+- Do not upscale an original image fill to claim a higher density. Its source pixels are preserved and the manifest leaves `scale` unset; compare its pixel dimensions with the intended rendered size before choosing whether the design source needs replacement.
 
 Non-empty `.env` values are loaded into the corresponding form fields when the console starts. Configuration responses use `Cache-Control: no-store`, and `FIGMA_TOKEN` is never embedded in the frontend bundle.
 

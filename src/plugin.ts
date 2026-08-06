@@ -59,7 +59,16 @@ function syncNode(
   exportSettings: ExportSettings[],
   result: SyncResult,
 ): void {
-  const exportable = isExportableAssetNode(node);
+  let current: BaseNode | null = node;
+  let effectivelyVisible = true;
+  while (current) {
+    if ('visible' in current && current.visible === false) {
+      effectivelyVisible = false;
+      break;
+    }
+    current = current.parent;
+  }
+  const exportable = effectivelyVisible && isExportableAssetNode(node);
   const expected = exportable ? exportSettings : [];
 
   if (!exportable && node.exportSettings.length === 0) {

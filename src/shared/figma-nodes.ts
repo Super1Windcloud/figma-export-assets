@@ -32,7 +32,7 @@ const ATOMIC_GRAPHIC_NODE_TYPES = new Set([
   'VECTOR',
 ]);
 
-interface FigmaPaint {
+export interface FigmaImagePaint {
   type?: string;
   visible?: boolean;
   imageRef?: string;
@@ -42,17 +42,25 @@ interface FigmaPaint {
   scalingFactor?: number;
 }
 
-function visibleImagePaints(node: FigmaTreeNode): FigmaPaint[] {
+export function visibleImagePaints(node: FigmaTreeNode): FigmaImagePaint[] {
   if (!Array.isArray(node.fills)) return [];
-  return node.fills.filter((paint): paint is FigmaPaint => {
+  return node.fills.filter((paint): paint is FigmaImagePaint => {
     if (!paint || typeof paint !== 'object') return false;
-    const value = paint as FigmaPaint;
+    const value = paint as FigmaImagePaint;
     return value.type === 'IMAGE' && value.visible !== false;
   });
 }
 
 export function hasVisibleImageFill(node: FigmaTreeNode): boolean {
   return visibleImagePaints(node).length > 0;
+}
+
+export function isImageFillContainerResourceNode(node: FigmaTreeNode): boolean {
+  return (
+    node.type === 'FRAME' &&
+    Boolean(node.children?.length) &&
+    hasVisibleImageFill(node)
+  );
 }
 
 function isGraphicComposition(node: FigmaTreeNode): boolean {

@@ -26,6 +26,9 @@ export interface ManifestLayout {
 export interface ManifestAsset {
   format: string;
   scale?: number;
+  source?: 'NODE_RENDER' | 'IMAGE_FILL';
+  imageRef?: string;
+  paintIndex?: number;
   relativePath: string;
   ninePatchRelativePath?: string;
 }

@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { generateComposeModule } from './compose-generator';
 import {
   DESIGN_MANIFEST_SCHEMA_VERSION,
@@ -22,7 +23,9 @@ import {
   hasVisibleImageFill,
   imageAssetDeduplicationKey,
   isBaseComponent,
+  isImageFillContainerResourceNode,
   isRenderableAssetNode,
+  visibleImagePaints,
 } from '../src/shared/figma-nodes';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
@@ -56,6 +59,9 @@ interface ExportItem {
   nodeId: string;
   format: ExportFormat;
   scale?: number;
+  source: 'NODE_RENDER' | 'IMAGE_FILL';
+  imageRef?: string;
+  paintIndex?: number;
   directory: string[];
   fileName: string;
   nodeName: string;
@@ -81,6 +87,10 @@ interface FigmaImagesResponse {
   images?: Record<string, string | null>;
 }
 
+interface FigmaImageFillsResponse {
+  meta?: { images?: Record<string, string | null> };
+}
+
 const FIGMA_API_BASE_URL = 'https://api.figma.com/v1';
 const IMAGE_BATCH_SIZE = 50;
 const DOWNLOAD_CONCURRENCY = 8;
@@ -101,7 +111,7 @@ const EXPORT_FORMATS = (
   .map((format) => format.trim().toUpperCase())
   .filter(Boolean);
 const EXPORT_SCALE = Number(
-  process.env.EXPORT_SCALE || process.env.VITE_EXPORT_SCALE || '1',
+  process.env.EXPORT_SCALE || process.env.VITE_EXPORT_SCALE || '4',
 );
 const EXPORT_SUFFIX =
   process.env.EXPORT_SUFFIX ?? process.env.VITE_EXPORT_SUFFIX ?? '';
@@ -164,20 +174,25 @@ function getExtension(format: ExportFormat): string {
   return format.toLowerCase();
 }
 
-function collectExports(
+export function collectExports(
   node: FigmaNode,
   globalSettings: FigmaExportSetting[],
   parentPath: string[] = [],
   exports: ExportItem[] = [],
   componentSet?: { nodeId: string; name: string },
+  ancestorsVisible = true,
 ): ExportItem[] {
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
-  let settings = EXPORT_BASE_COMPONENTS
-    ? isRenderableAssetNode(node)
-      ? globalSettings
-      : []
-    : node.exportSettings || [];
+  const effectivelyVisible = ancestorsVisible && node.visible !== false;
+  let settings =
+    effectivelyVisible && EXPORT_BASE_COMPONENTS
+      ? isRenderableAssetNode(node)
+        ? globalSettings
+        : []
+      : effectivelyVisible
+        ? node.exportSettings || []
+        : [];
 
   if (!isBaseComponent(node) && hasVisibleImageFill(node)) {
     settings = settings.filter((setting) =>
@@ -209,12 +224,32 @@ function collectExports(
       nodeId: node.id,
       format,
       scale,
+      source: 'NODE_RENDER',
       directory: parentPath,
       fileName: `${normalizedNodeName}${suffix === 'unnamed' ? '' : suffix}.${getExtension(format)}`,
       nodeName,
       nodePath: currentPath,
       sourceNode: node,
       componentSet,
+    });
+  }
+
+  if (effectivelyVisible && isImageFillContainerResourceNode(node)) {
+    visibleImagePaints(node).forEach((paint, paintIndex) => {
+      if (!paint.imageRef) return;
+      exports.push({
+        nodeId: node.id,
+        format: 'PNG',
+        source: 'IMAGE_FILL',
+        imageRef: paint.imageRef,
+        paintIndex,
+        directory: currentPath,
+        fileName: `background${paintIndex === 0 ? '' : `-${paintIndex + 1}`}.png`,
+        nodeName,
+        nodePath: currentPath,
+        sourceNode: node,
+        componentSet,
+      });
     });
   }
 
@@ -229,13 +264,24 @@ function collectExports(
       currentPath,
       exports,
       childComponentSet,
+      effectivelyVisible,
     );
   return exports;
 }
 
 function deduplicateImageExports(exports: ExportItem[]): void {
+  const preferredImageFillNode = new Map<string, string>();
+  for (const item of exports) {
+    if (item.source !== 'IMAGE_FILL' || !item.imageRef) continue;
+    const current = preferredImageFillNode.get(item.imageRef);
+    if (!current || (current.startsWith('I') && !item.nodeId.startsWith('I'))) {
+      preferredImageFillNode.set(item.imageRef, item.nodeId);
+    }
+  }
+
   const preferredNodeByImage = new Map<string, string>();
   for (const item of exports) {
+    if (item.source === 'IMAGE_FILL') continue;
     if (isBaseComponent(item.sourceNode)) continue;
     const key = imageAssetDeduplicationKey(item.sourceNode);
     if (!key) continue;
@@ -246,6 +292,12 @@ function deduplicateImageExports(exports: ExportItem[]): void {
   }
 
   const unique = exports.filter((item) => {
+    if (item.source === 'IMAGE_FILL') {
+      return (
+        Boolean(item.imageRef) &&
+        preferredImageFillNode.get(item.imageRef!) === item.nodeId
+      );
+    }
     if (isBaseComponent(item.sourceNode)) return true;
     const key = imageAssetDeduplicationKey(item.sourceNode);
     return !key || preferredNodeByImage.get(key) === item.nodeId;
@@ -315,8 +367,9 @@ async function getDownloadUrls(
   exports: ExportItem[],
 ): Promise<DownloadItem[]> {
   const urls: DownloadItem[] = [];
+  const nodeExports = exports.filter((item) => item.source === 'NODE_RENDER');
 
-  for (const group of groupExports(exports)) {
+  for (const group of groupExports(nodeExports)) {
     for (const batch of chunk(group, IMAGE_BATCH_SIZE)) {
       let pending = batch;
       for (
@@ -360,7 +413,33 @@ async function getDownloadUrls(
     }
   }
 
+  const imageFillExports = exports.filter(
+    (item): item is ExportItem & { imageRef: string } =>
+      item.source === 'IMAGE_FILL' && Boolean(item.imageRef),
+  );
+  if (imageFillExports.length > 0) {
+    const response = await figmaRequest<FigmaImageFillsResponse>(
+      `/files/${fileKey}/images`,
+      token,
+    );
+    for (const item of imageFillExports) {
+      const url = response.meta?.images?.[item.imageRef];
+      if (url) urls.push({ ...item, url });
+      else
+        console.warn(
+          `Figma did not return an image-fill URL for ${item.imageRef} on node ${item.nodeId} (${item.nodeName})`,
+        );
+    }
+  }
+
   return urls;
+}
+
+function rawImageFormat(contentType: string | null): ExportFormat | undefined {
+  const normalized = contentType?.split(';', 1)[0].trim().toLowerCase();
+  if (normalized === 'image/png') return 'PNG';
+  if (normalized === 'image/jpeg') return 'JPG';
+  return undefined;
 }
 
 async function downloadAsset(
@@ -372,14 +451,27 @@ async function downloadAsset(
     throw new Error(
       `Download failed for node ${item.nodeId}: HTTP ${response.status}`,
     );
-  const directory = path.join(outputDirectory, ...item.directory);
-  const destination = path.join(directory, item.fileName);
+  let downloadedItem = item;
+  if (item.source === 'IMAGE_FILL') {
+    const format = rawImageFormat(response.headers.get('content-type'));
+    if (!format)
+      throw new Error(
+        `Unsupported image-fill content type for ${item.imageRef}: ${response.headers.get('content-type') || 'missing'}`,
+      );
+    downloadedItem = {
+      ...item,
+      format,
+      fileName: `${path.basename(item.fileName, path.extname(item.fileName))}.${getExtension(format)}`,
+    };
+  }
+  const directory = path.join(outputDirectory, ...downloadedItem.directory);
+  const destination = path.join(directory, downloadedItem.fileName);
   await mkdir(directory, { recursive: true });
   await writeFile(destination, new Uint8Array(await response.arrayBuffer()), {
     flag: 'w',
   });
   console.log(`Saved ${path.relative(outputDirectory, destination)}`);
-  return { ...item, destination };
+  return { ...downloadedItem, destination };
 }
 
 async function downloadWithConcurrency(
@@ -437,6 +529,9 @@ function buildManifest(
       return {
         format: asset.format,
         scale: asset.scale,
+        source: asset.source,
+        imageRef: asset.imageRef,
+        paintIndex: asset.paintIndex,
         relativePath: relativeAssetPath(fileOutputDirectory, asset.destination),
         ninePatchRelativePath: ninePatchSet.has(path.resolve(ninePatchPath))
           ? relativeAssetPath(fileOutputDirectory, ninePatchPath)
@@ -563,7 +658,11 @@ async function main(): Promise<void> {
     if (NINE_PATCH_ENABLED) {
       console.log('Generating Nine-Patch variants with ImageMagick...');
       stagedNinePatches = await createNinePatches(
-        stagedDownloads.map((asset) => asset.destination),
+        stagedDownloads
+          .filter(
+            (asset) => asset.source === 'NODE_RENDER' && asset.format === 'PNG',
+          )
+          .map((asset) => asset.destination),
       );
       console.log(`Generated ${stagedNinePatches.length} Nine-Patch assets.`);
     }
@@ -654,7 +753,12 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+const entrypoint = process.argv[1]
+  ? pathToFileURL(path.resolve(process.argv[1])).href
+  : undefined;
+if (entrypoint === import.meta.url) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

@@ -370,7 +370,7 @@ const server = createServer(async (request, response) => {
           .split(',')
           .map((format) => format.trim().toUpperCase())
           .filter((format) => ['PNG', 'JPG', 'SVG', 'PDF'].includes(format)),
-        scale: Number(process.env.VITE_EXPORT_SCALE || '1'),
+        scale: Number(process.env.VITE_EXPORT_SCALE || '4'),
         suffix: process.env.VITE_EXPORT_SUFFIX || '',
         ninePatchEnabled: process.env.NINE_PATCH_ENABLED !== 'false',
         designManifestEnabled: process.env.DESIGN_MANIFEST_ENABLED !== 'false',
