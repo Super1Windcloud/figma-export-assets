@@ -31,6 +31,8 @@ export interface ManifestAsset {
   paintIndex?: number;
   relativePath: string;
   ninePatchRelativePath?: string;
+  // Set when the file was deduplicated and belongs to another node.
+  duplicateOf?: string;
 }
 
 export interface ManifestNode {

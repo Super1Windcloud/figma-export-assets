@@ -71,6 +71,12 @@ interface ExportItem {
   componentSet?: { nodeId: string; name: string };
 }
 
+// An export dropped by deduplication; its node reuses the canonical files.
+export interface DuplicateExport {
+  item: ExportItem;
+  canonicalNodeId: string;
+}
+
 interface DownloadItem extends ExportItem {
   url: string;
 }
@@ -291,6 +297,7 @@ function collectComponentIds(node: FigmaNode, ids = new Set<string>()) {
 export function deduplicateInstanceExports(
   exports: ExportItem[],
   localComponentIds: Set<string>,
+  duplicates: DuplicateExport[] = [],
 ): void {
   const preferredNodeByInstance = new Map<string, string>();
   const keyOf = (node: FigmaNode) =>
@@ -307,16 +314,24 @@ export function deduplicateInstanceExports(
     const node = item.sourceNode;
     if (item.source !== 'NODE_RENDER' || node.type !== 'INSTANCE') return true;
     if (!node.componentId) return true;
-    if (localComponentIds.has(node.componentId)) return false;
+    if (localComponentIds.has(node.componentId)) {
+      duplicates.push({ item, canonicalNodeId: node.componentId });
+      return false;
+    }
     const key = keyOf(node);
     const preferred = preferredNodeByInstance.get(key);
     if (!preferred) preferredNodeByInstance.set(key, node.id);
-    return !preferred || preferred === node.id;
+    if (!preferred || preferred === node.id) return true;
+    duplicates.push({ item, canonicalNodeId: preferred });
+    return false;
   });
   exports.splice(0, exports.length, ...unique);
 }
 
-function deduplicateImageExports(exports: ExportItem[]): void {
+export function deduplicateImageExports(
+  exports: ExportItem[],
+  duplicates: DuplicateExport[] = [],
+): void {
   const preferredImageFillNode = new Map<string, string>();
   for (const item of exports) {
     if (item.source !== 'IMAGE_FILL' || !item.imageRef) continue;
@@ -339,15 +354,19 @@ function deduplicateImageExports(exports: ExportItem[]): void {
   }
 
   const unique = exports.filter((item) => {
+    let preferred: string | undefined;
     if (item.source === 'IMAGE_FILL') {
-      return (
-        Boolean(item.imageRef) &&
-        preferredImageFillNode.get(item.imageRef!) === item.nodeId
-      );
+      if (!item.imageRef) return false;
+      preferred = preferredImageFillNode.get(item.imageRef);
+    } else {
+      if (isBaseComponent(item.sourceNode)) return true;
+      const key = imageAssetDeduplicationKey(item.sourceNode);
+      if (!key) return true;
+      preferred = preferredNodeByImage.get(key);
     }
-    if (isBaseComponent(item.sourceNode)) return true;
-    const key = imageAssetDeduplicationKey(item.sourceNode);
-    return !key || preferredNodeByImage.get(key) === item.nodeId;
+    if (!preferred || preferred === item.nodeId) return true;
+    duplicates.push({ item, canonicalNodeId: preferred });
+    return false;
   });
   exports.splice(0, exports.length, ...unique);
 }
@@ -548,7 +567,7 @@ function relativeAssetPath(root: string, target: string): string {
   return path.relative(root, target).split(path.sep).join('/');
 }
 
-function buildManifest(
+export function buildManifest(
   fileKey: string,
   fileName: string,
   fileOutputDirectory: string,
@@ -556,6 +575,7 @@ function buildManifest(
   exports: ExportItem[],
   downloaded: DownloadedAsset[],
   ninePatches: string[],
+  duplicates: DuplicateExport[] = [],
 ): DesignManifest {
   const downloadsByNode = new Map<string, DownloadedAsset[]>();
   for (const asset of downloaded) {
@@ -566,25 +586,29 @@ function buildManifest(
   const ninePatchSet = new Set(ninePatches.map((asset) => path.resolve(asset)));
   const components = new Map<string, ManifestComponent>();
   const resources = new Map<string, ManifestResource>();
+  const toManifestAsset = (asset: DownloadedAsset, duplicateOf?: string) => {
+    const ninePatchPath = asset.destination.replace(/\.png$/i, '.9.png');
+    return {
+      format: asset.format,
+      scale: asset.scale,
+      source: asset.source,
+      imageRef: asset.imageRef,
+      paintIndex: asset.paintIndex,
+      relativePath: relativeAssetPath(fileOutputDirectory, asset.destination),
+      ninePatchRelativePath: ninePatchSet.has(path.resolve(ninePatchPath))
+        ? relativeAssetPath(fileOutputDirectory, ninePatchPath)
+        : undefined,
+      duplicateOf,
+    };
+  };
 
   for (const item of exports) {
     const source = item.sourceNode;
     const width = source.absoluteBoundingBox?.width;
     const height = source.absoluteBoundingBox?.height;
-    const assets = (downloadsByNode.get(item.nodeId) || []).map((asset) => {
-      const ninePatchPath = asset.destination.replace(/\.png$/i, '.9.png');
-      return {
-        format: asset.format,
-        scale: asset.scale,
-        source: asset.source,
-        imageRef: asset.imageRef,
-        paintIndex: asset.paintIndex,
-        relativePath: relativeAssetPath(fileOutputDirectory, asset.destination),
-        ninePatchRelativePath: ninePatchSet.has(path.resolve(ninePatchPath))
-          ? relativeAssetPath(fileOutputDirectory, ninePatchPath)
-          : undefined,
-      };
-    });
+    const assets = (downloadsByNode.get(item.nodeId) || []).map((asset) =>
+      toManifestAsset(asset),
+    );
     const dimensions =
       typeof width === 'number' && typeof height === 'number'
         ? { width, height }
@@ -636,6 +660,58 @@ function buildManifest(
     });
   }
 
+  // Deduplicated nodes keep a manifest entry pointing at the shared files so
+  // every screen in the hierarchy can still resolve its own assets.
+  const canonicalByNode = new Map(
+    duplicates.map(({ item, canonicalNodeId }) => [
+      item.nodeId,
+      canonicalNodeId,
+    ]),
+  );
+  const resolveCanonical = (nodeId: string) => {
+    const visited = new Set<string>();
+    let current = nodeId;
+    while (canonicalByNode.has(current) && !visited.has(current)) {
+      visited.add(current);
+      current = canonicalByNode.get(current)!;
+    }
+    return current;
+  };
+  for (const { item, canonicalNodeId } of duplicates) {
+    if (components.has(item.nodeId)) continue;
+    const canonical = resolveCanonical(canonicalNodeId);
+    const shared = (downloadsByNode.get(canonical) || []).filter((asset) =>
+      item.source === 'IMAGE_FILL'
+        ? asset.source === 'IMAGE_FILL' && asset.imageRef === item.imageRef
+        : asset.source === 'NODE_RENDER' && asset.format === item.format,
+    );
+    if (!shared.length) continue;
+    const source = item.sourceNode;
+    const width = source.absoluteBoundingBox?.width;
+    const height = source.absoluteBoundingBox?.height;
+    const resource = resources.get(item.nodeId) || {
+      nodeId: item.nodeId,
+      name: item.nodeName,
+      nodePath: item.nodePath,
+      type: source.type,
+      dimensions:
+        typeof width === 'number' && typeof height === 'number'
+          ? { width, height }
+          : undefined,
+      assets: [],
+    };
+    for (const asset of shared) {
+      const manifestAsset = toManifestAsset(asset, canonical);
+      if (
+        !resource.assets.some(
+          (existing) => existing.relativePath === manifestAsset.relativePath,
+        )
+      )
+        resource.assets.push(manifestAsset);
+    }
+    resources.set(item.nodeId, resource);
+  }
+
   return {
     schemaVersion: DESIGN_MANIFEST_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
@@ -675,8 +751,13 @@ async function main(): Promise<void> {
   const exports: ExportItem[] = [];
   for (const page of file.document.children || [])
     collectExports(page, globalSettings, [], exports);
-  deduplicateInstanceExports(exports, collectComponentIds(file.document));
-  deduplicateImageExports(exports);
+  const duplicates: DuplicateExport[] = [];
+  deduplicateInstanceExports(
+    exports,
+    collectComponentIds(file.document),
+    duplicates,
+  );
+  deduplicateImageExports(exports, duplicates);
   disambiguateFileNames(exports);
   if (exports.length === 0) console.log('No exportable nodes were found.');
   else
@@ -760,6 +841,7 @@ async function main(): Promise<void> {
     exports,
     downloaded,
     ninePatches,
+    duplicates,
   );
   let generatorManifestPath = manifestPath;
   let temporaryDirectory: string | undefined;

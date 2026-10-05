@@ -844,6 +844,7 @@ export async function generateComposeModule(
 
   const assetRoot = options.assetRoot || path.dirname(manifestPath);
   const generated: GeneratedComponent[] = [];
+  const drawableByAssetPath = new Map<string, string>();
   let resourceCount = 0;
   for (const [index, component] of manifest.components.entries()) {
     const asset = component.assets.find((candidate) =>
@@ -856,6 +857,7 @@ export async function generateComposeModule(
         resolveAssetPath(assetRoot, asset.relativePath),
         path.join(resourceDirectory, `${name}.${extension}`),
       );
+      drawableByAssetPath.set(asset.relativePath, name);
       resourceCount += 1;
       if (asset.ninePatchRelativePath) {
         await copyFile(
@@ -880,26 +882,36 @@ export async function generateComposeModule(
   }
 
   const generatedAssets: GeneratedAsset[] = [];
-  for (const [resourceIndex, resource] of (
-    manifest.resources || []
-  ).entries()) {
-    const rasterAssets = resource.assets.filter((asset) =>
-      ['PNG', 'JPG'].includes(asset.format),
-    );
-    for (const [assetIndex, asset] of rasterAssets.entries()) {
-      const name = designResourceName(resource, resourceIndex, assetIndex);
-      const extension = asset.format === 'JPG' ? 'jpg' : 'png';
-      await copyFile(
-        resolveAssetPath(assetRoot, asset.relativePath),
-        path.join(resourceDirectory, `${name}.${extension}`),
+  // Copy owned files first so deduplicated entries can reuse their drawables.
+  for (const sharedPass of [false, true]) {
+    for (const [resourceIndex, resource] of (
+      manifest.resources || []
+    ).entries()) {
+      const rasterAssets = resource.assets.filter((asset) =>
+        ['PNG', 'JPG'].includes(asset.format),
       );
-      generatedAssets.push({
-        resource,
-        resourceName: name,
-        enumName: name.toUpperCase(),
-        imageRef: asset.imageRef,
-      });
-      resourceCount += 1;
+      for (const [assetIndex, asset] of rasterAssets.entries()) {
+        if (Boolean(asset.duplicateOf) !== sharedPass) continue;
+        const name = designResourceName(resource, resourceIndex, assetIndex);
+        const shared = sharedPass
+          ? drawableByAssetPath.get(asset.relativePath)
+          : undefined;
+        if (!shared) {
+          const extension = asset.format === 'JPG' ? 'jpg' : 'png';
+          await copyFile(
+            resolveAssetPath(assetRoot, asset.relativePath),
+            path.join(resourceDirectory, `${name}.${extension}`),
+          );
+          drawableByAssetPath.set(asset.relativePath, name);
+          resourceCount += 1;
+        }
+        generatedAssets.push({
+          resource,
+          resourceName: shared || name,
+          enumName: name.toUpperCase(),
+          imageRef: asset.imageRef,
+        });
+      }
     }
   }
 

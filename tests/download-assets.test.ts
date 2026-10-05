@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import path from 'node:path';
 import {
+  buildManifest,
   collectExports,
+  deduplicateImageExports,
   deduplicateInstanceExports,
+  type DuplicateExport,
 } from '../scripts/download-assets';
 
 const pngSettings = [
@@ -196,4 +200,55 @@ test('keeps one export per external instance and drops local component instances
     exports.map((item) => item.nodeId),
     ['5:2'],
   );
+});
+
+test('keeps manifest entries for deduplicated image layers on every screen', () => {
+  const hero = (id: string) => ({
+    id,
+    name: 'Hero',
+    type: 'RECTANGLE',
+    fills: [{ type: 'IMAGE', imageRef: 'hero-ref' }],
+    absoluteBoundingBox: { width: 360, height: 299 },
+  });
+  const page = {
+    id: '0:1',
+    name: 'Page',
+    type: 'CANVAS',
+    children: [
+      { id: '1:1', name: 'Landscape', type: 'FRAME', children: [hero('1:2')] },
+      { id: '2:1', name: 'Portrait', type: 'FRAME', children: [hero('2:2')] },
+    ],
+  };
+  const exports = collectExports(page, pngSettings);
+  const duplicates: DuplicateExport[] = [];
+  deduplicateImageExports(exports, duplicates);
+
+  assert.deepEqual(
+    exports.map((item) => item.nodeId),
+    ['1:2'],
+  );
+  assert.deepEqual(
+    duplicates.map(({ item, canonicalNodeId }) => [
+      item.nodeId,
+      canonicalNodeId,
+    ]),
+    [['2:2', '1:2']],
+  );
+
+  const root = path.resolve('/tmp/export-root');
+  const manifest = buildManifest(
+    'file-key',
+    'File',
+    root,
+    { id: '0:0', name: 'Document', type: 'DOCUMENT', children: [page] },
+    exports,
+    [{ ...exports[0], destination: path.join(root, 'Page/Landscape/Hero.png') }],
+    [],
+    duplicates,
+  );
+
+  const portrait = manifest.resources?.find((item) => item.nodeId === '2:2');
+  assert.deepEqual(portrait?.nodePath, ['Page', 'Portrait', 'Hero']);
+  assert.equal(portrait?.assets[0].relativePath, 'Page/Landscape/Hero.png');
+  assert.equal(portrait?.assets[0].duplicateOf, '1:2');
 });

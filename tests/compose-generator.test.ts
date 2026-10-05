@@ -256,3 +256,77 @@ test('generates a Compose module by consuming only the manifest contract', async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('reuses the canonical drawable for deduplicated resources', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'compose-test-'));
+  try {
+    const manifest = exampleManifest();
+    manifest.resources!.push({
+      nodeId: '40:306',
+      name: 'Hero copy',
+      nodePath: ['Screens', 'Portrait', 'Hero copy'],
+      type: 'FRAME',
+      assets: [
+        {
+          format: 'PNG',
+          source: 'IMAGE_FILL',
+          imageRef: 'home-background-ref',
+          relativePath: 'Screens/Home/background.png',
+          duplicateOf: '34:244',
+        },
+      ],
+    });
+    const manifestPath = path.join(directory, 'design-manifest.json');
+    const originalAsset = path.join(
+      directory,
+      'Components',
+      'Buttons',
+      'Primary Button.png',
+    );
+    const backgroundAsset = path.join(
+      directory,
+      'Screens',
+      'Home',
+      'background.png',
+    );
+    await writeDesignManifest(manifestPath, manifest);
+    await mkdir(path.dirname(originalAsset), { recursive: true });
+    await writeFile(originalAsset, new Uint8Array([1, 2, 3]));
+    await writeFile(
+      originalAsset.replace(/\.png$/, '.9.png'),
+      new Uint8Array([4, 5, 6]),
+    );
+    await mkdir(path.dirname(backgroundAsset), { recursive: true });
+    await writeFile(backgroundAsset, new Uint8Array([7, 8, 9]));
+
+    const result = await generateComposeModule(manifestPath, {
+      outputDirectory: directory,
+      moduleName: 'design-ui',
+      packageName: 'com.example.designui',
+    });
+
+    assert.equal(result.resourceCount, 3);
+    assert.equal(result.designResourceCount, 2);
+    const assets = await readFile(
+      path.join(
+        result.moduleDirectory,
+        'src/main/java/com/example/designui/assets/FigmaAssets.kt',
+      ),
+      'utf8',
+    );
+    assert.match(
+      assets,
+      /FIGMA_ASSET_HERO_COPY_40_306_1\(R\.drawable\.figma_asset_home_34_244_1, "Hero copy", "40:306"/,
+    );
+    await assert.rejects(
+      access(
+        path.join(
+          result.moduleDirectory,
+          'src/main/res/drawable-nodpi/figma_asset_hero_copy_40_306_1.png',
+        ),
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
