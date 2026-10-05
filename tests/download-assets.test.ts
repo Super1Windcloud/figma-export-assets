@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { collectExports } from '../scripts/download-assets';
+import {
+  collectExports,
+  deduplicateInstanceExports,
+} from '../scripts/download-assets';
 
 const pngSettings = [
   { format: 'PNG', constraint: { type: 'SCALE', value: 3 } },
@@ -65,4 +68,132 @@ test('does not collect renderable descendants of a hidden ancestor', () => {
   );
 
   assert.deepEqual(exports, []);
+});
+
+const box = (size: number) => ({ width: size, height: size });
+const pngSvgSettings = [...pngSettings, { format: 'SVG' }];
+
+test('collects childless image-filled frames as rendered image assets', () => {
+  const exports = collectExports(
+    {
+      id: '3:1',
+      name: 'icon',
+      type: 'FRAME',
+      children: [
+        {
+          id: '3:2',
+          name: 'Frame 8',
+          type: 'FRAME',
+          fills: [{ type: 'IMAGE', imageRef: 'tab-icon' }],
+          absoluteBoundingBox: box(28),
+        },
+      ],
+    },
+    pngSvgSettings,
+  );
+
+  assert.deepEqual(
+    exports.map(({ nodeId, source, format, directory, fileName }) => ({
+      nodeId,
+      source,
+      format,
+      directory,
+      fileName,
+    })),
+    [
+      {
+        nodeId: '3:2',
+        source: 'NODE_RENDER',
+        format: 'PNG',
+        directory: ['icon'],
+        fileName: 'Frame 8.png',
+      },
+    ],
+  );
+});
+
+test('exports the outermost unmarked icon and skips its layers and instance sublayers', () => {
+  const exports = collectExports(
+    {
+      id: '4:1',
+      name: 'Card',
+      type: 'FRAME',
+      absoluteBoundingBox: box(200),
+      children: [
+        {
+          id: '4:2',
+          name: 'Switch',
+          type: 'FRAME',
+          absoluteBoundingBox: box(20),
+          children: [
+            {
+              id: '4:3',
+              name: 'arrow-left-right',
+              type: 'FRAME',
+              absoluteBoundingBox: box(10),
+              children: [
+                {
+                  id: '4:4',
+                  name: 'Vector',
+                  type: 'VECTOR',
+                  absoluteBoundingBox: box(8),
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'I4:5;9:1',
+          name: 'Vector',
+          type: 'VECTOR',
+          absoluteBoundingBox: box(12),
+        },
+      ],
+    },
+    pngSvgSettings,
+  );
+
+  assert.deepEqual(
+    exports.map(
+      ({ nodeId, format, fileName }) => `${nodeId}:${format}:${fileName}`,
+    ),
+    ['4:2:PNG:Switch.png', '4:2:SVG:Switch.svg'],
+  );
+});
+
+test('keeps one export per external instance and drops local component instances', () => {
+  const instance = (id: string, componentId: string) => ({
+    id,
+    name: 'Close',
+    type: 'INSTANCE',
+    componentId,
+    absoluteBoundingBox: box(31),
+    children: [
+      {
+        id: `I${id};1`,
+        name: 'Vector',
+        type: 'VECTOR',
+        absoluteBoundingBox: box(15),
+      },
+    ],
+  });
+  const exports = collectExports(
+    {
+      id: '5:1',
+      name: 'Page',
+      type: 'FRAME',
+      children: [
+        instance('5:2', 'remote:1'),
+        instance('5:3', 'remote:1'),
+        instance('5:4', 'local:1'),
+      ],
+    },
+    pngSettings,
+  );
+  deduplicateInstanceExports(exports, new Set(['local:1']));
+
+  assert.deepEqual(
+    exports.map((item) => item.nodeId),
+    ['5:2'],
+  );
 });

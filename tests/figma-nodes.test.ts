@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ICON_MAX_SIZE,
   imageAssetDeduplicationKey,
   isBaseComponent,
   isExportableAssetNode,
+  isIconGraphicNode,
   isImageFillContainerResourceNode,
+  isImageFillLeafNode,
   isRenderableAssetNode,
 } from '../src/shared/figma-nodes';
 
@@ -176,5 +179,94 @@ test('skips exportable containers that render as empty', () => {
       children: [{ type: 'RECTANGLE' }],
     }),
     true,
+  );
+});
+
+test('exports childless image-filled frames as atomic image slots', () => {
+  const leaf = {
+    type: 'FRAME',
+    fills: [{ type: 'IMAGE', imageRef: 'icon-ref' }],
+  };
+  assert.equal(isImageFillLeafNode(leaf), true);
+  assert.equal(isExportableAssetNode(leaf), true);
+  assert.equal(isImageFillContainerResourceNode(leaf), false);
+  assert.equal(
+    isImageFillLeafNode({ ...leaf, children: [{ type: 'TEXT' }] }),
+    false,
+  );
+});
+
+test('accepts explicitly marked frame and instance graphic compositions', () => {
+  for (const type of ['FRAME', 'INSTANCE']) {
+    assert.equal(
+      isExportableAssetNode({
+        type,
+        exportSettings: [{}],
+        children: [{ type: 'FRAME', children: [{ type: 'VECTOR' }] }],
+      }),
+      true,
+    );
+  }
+});
+
+test('recognizes small unmarked vector artwork as icons', () => {
+  const box = (size: number) => ({ width: size, height: size });
+  assert.equal(
+    isIconGraphicNode({ type: 'VECTOR', absoluteBoundingBox: box(16) }),
+    true,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'INSTANCE',
+      absoluteBoundingBox: box(31),
+      children: [{ type: 'RECTANGLE' }, { type: 'VECTOR' }],
+    }),
+    true,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'FRAME',
+      absoluteBoundingBox: box(38),
+      children: [{ type: 'RECTANGLE' }, { type: 'RECTANGLE' }],
+    }),
+    true,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'FRAME',
+      absoluteBoundingBox: box(20),
+      children: [{ type: 'RECTANGLE' }],
+    }),
+    false,
+  );
+  assert.equal(
+    isIconGraphicNode({ type: 'RECTANGLE', absoluteBoundingBox: box(16) }),
+    false,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'VECTOR',
+      absoluteBoundingBox: box(ICON_MAX_SIZE + 1),
+    }),
+    false,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'FRAME',
+      absoluteBoundingBox: box(24),
+      children: [{ type: 'TEXT' }, { type: 'VECTOR' }],
+    }),
+    false,
+  );
+  assert.equal(
+    isIconGraphicNode({
+      type: 'FRAME',
+      absoluteBoundingBox: box(24),
+      children: [
+        { type: 'VECTOR' },
+        { type: 'RECTANGLE', fills: [{ type: 'IMAGE', imageRef: 'photo' }] },
+      ],
+    }),
+    false,
   );
 });

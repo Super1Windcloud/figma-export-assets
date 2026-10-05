@@ -63,8 +63,18 @@ export function isImageFillContainerResourceNode(node: FigmaTreeNode): boolean {
   );
 }
 
+// A childless image-filled frame is an image slot, not a layout container.
+export function isImageFillLeafNode(node: FigmaTreeNode): boolean {
+  return (
+    node.type === 'FRAME' && !node.children?.length && hasVisibleImageFill(node)
+  );
+}
+
+const GRAPHIC_CONTAINER_NODE_TYPES = new Set(['GROUP', 'FRAME', 'INSTANCE']);
+
 function isGraphicComposition(node: FigmaTreeNode): boolean {
-  if (node.type !== 'GROUP' || !node.children?.length) return false;
+  if (!GRAPHIC_CONTAINER_NODE_TYPES.has(node.type) || !node.children?.length)
+    return false;
   return node.children
     .filter((child) => child.visible !== false)
     .every(
@@ -81,11 +91,57 @@ export function isExportableAssetNode(node: FigmaTreeNode): boolean {
   if (ATOMIC_GRAPHIC_NODE_TYPES.has(node.type) && hasVisibleImageFill(node)) {
     return true;
   }
+  if (isImageFillLeafNode(node)) return true;
 
   const explicitlyMarked = (node.exportSettings?.length ?? 0) > 0;
   return (
     explicitlyMarked &&
     (ATOMIC_GRAPHIC_NODE_TYPES.has(node.type) || isGraphicComposition(node))
+  );
+}
+
+export const ICON_MAX_SIZE = 64;
+
+const ICON_VECTOR_NODE_TYPES = new Set([
+  'BOOLEAN_OPERATION',
+  'POLYGON',
+  'REGULAR_POLYGON',
+  'STAR',
+  'VECTOR',
+]);
+
+function visibleGraphicDescendants(node: FigmaTreeNode): FigmaTreeNode[] {
+  return (node.children || [])
+    .filter((child) => child.visible !== false)
+    .flatMap((child) =>
+      child.children?.length ? visibleGraphicDescendants(child) : [child],
+    );
+}
+
+/**
+ * Small unmarked vector artwork (icons) that cannot be rebuilt from layout
+ * metadata. Plain single shapes stay code-drawable; image fills are handled
+ * by the atomic image rules.
+ */
+export function isIconGraphicNode(
+  node: FigmaTreeNode & {
+    absoluteBoundingBox?: { width?: number; height?: number };
+  },
+): boolean {
+  if (node.visible === false || node.opacity === 0) return false;
+  const width = node.absoluteBoundingBox?.width ?? 0;
+  const height = node.absoluteBoundingBox?.height ?? 0;
+  if (width <= 0 || height <= 0) return false;
+  if (width > ICON_MAX_SIZE || height > ICON_MAX_SIZE) return false;
+  if (hasVisibleImageFill(node)) return false;
+  if (ICON_VECTOR_NODE_TYPES.has(node.type)) return true;
+  if (!isGraphicComposition(node)) return false;
+
+  const leaves = visibleGraphicDescendants(node);
+  if (leaves.some(hasVisibleImageFill)) return false;
+  return (
+    leaves.some((leaf) => ICON_VECTOR_NODE_TYPES.has(leaf.type)) ||
+    leaves.length >= 2
   );
 }
 

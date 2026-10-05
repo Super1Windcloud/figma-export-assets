@@ -23,6 +23,7 @@ import {
   hasVisibleImageFill,
   imageAssetDeduplicationKey,
   isBaseComponent,
+  isIconGraphicNode,
   isImageFillContainerResourceNode,
   isRenderableAssetNode,
   visibleImagePaints,
@@ -185,13 +186,18 @@ export function collectExports(
   exports: ExportItem[] = [],
   componentSet?: { nodeId: string; name: string },
   ancestorsVisible = true,
+  insideGraphicAsset = false,
 ): ExportItem[] {
   const nodeName = sanitizePathSegment(node.name || node.type || node.id);
   const currentPath = [...parentPath, nodeName];
   const effectivelyVisible = ancestorsVisible && node.visible !== false;
+  // Instance sublayers (ids containing ";") repeat their main component's
+  // artwork, and layers inside an exported graphic are already rendered.
+  const autoIcon =
+    !insideGraphicAsset && !node.id.includes(';') && isIconGraphicNode(node);
   let settings =
     effectivelyVisible && EXPORT_BASE_COMPONENTS
-      ? isRenderableAssetNode(node)
+      ? isRenderableAssetNode(node) || autoIcon
         ? globalSettings
         : []
       : effectivelyVisible
@@ -269,8 +275,45 @@ export function collectExports(
       exports,
       childComponentSet,
       effectivelyVisible,
+      insideGraphicAsset || (settings.length > 0 && !isBaseComponent(node)),
     );
   return exports;
+}
+
+function collectComponentIds(node: FigmaNode, ids = new Set<string>()) {
+  if (isBaseComponent(node)) ids.add(node.id);
+  for (const child of node.children || []) collectComponentIds(child, ids);
+  return ids;
+}
+
+// Instances of local components are covered by the component export; repeated
+// instances of an external component keep one copy per override signature.
+export function deduplicateInstanceExports(
+  exports: ExportItem[],
+  localComponentIds: Set<string>,
+): void {
+  const preferredNodeByInstance = new Map<string, string>();
+  const keyOf = (node: FigmaNode) =>
+    JSON.stringify({
+      componentId: node.componentId,
+      width: node.absoluteBoundingBox?.width,
+      height: node.absoluteBoundingBox?.height,
+      fills: node.fills,
+      strokes: node.strokes,
+      effects: node.effects,
+      opacity: node.opacity,
+    });
+  const unique = exports.filter((item) => {
+    const node = item.sourceNode;
+    if (item.source !== 'NODE_RENDER' || node.type !== 'INSTANCE') return true;
+    if (!node.componentId) return true;
+    if (localComponentIds.has(node.componentId)) return false;
+    const key = keyOf(node);
+    const preferred = preferredNodeByInstance.get(key);
+    if (!preferred) preferredNodeByInstance.set(key, node.id);
+    return !preferred || preferred === node.id;
+  });
+  exports.splice(0, exports.length, ...unique);
 }
 
 function deduplicateImageExports(exports: ExportItem[]): void {
@@ -632,6 +675,7 @@ async function main(): Promise<void> {
   const exports: ExportItem[] = [];
   for (const page of file.document.children || [])
     collectExports(page, globalSettings, [], exports);
+  deduplicateInstanceExports(exports, collectComponentIds(file.document));
   deduplicateImageExports(exports);
   disambiguateFileNames(exports);
   if (exports.length === 0) console.log('No exportable nodes were found.');
