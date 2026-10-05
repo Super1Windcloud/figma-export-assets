@@ -231,7 +231,7 @@ async function loadPublicConfig(): Promise<void> {
     const response = await fetch('/api/config');
     if (!response.ok) return;
     const config = (await response.json()) as PublicConfig;
-    figmaUrlInput.value = config.figmaUrl;
+    if (!figmaUrlInput.value.trim()) figmaUrlInput.value = config.figmaUrl;
     tokenInput.value = config.token;
     outputInput.value = config.outputDirectory;
     scaleInput.value = String(config.scale);

@@ -9,6 +9,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { parseFigmaUrl } from './src/shared/figma-url';
+import { defaultFigmaUrl } from './scripts/figma-recents';
 
 type ExportFormat = 'PNG' | 'JPG' | 'SVG' | 'PDF';
 type JobStatus = 'running' | 'completed' | 'failed' | 'cancelled';
@@ -353,13 +354,8 @@ const server = createServer(async (request, response) => {
     );
 
     if (request.method === 'GET' && requestUrl.pathname === '/api/config') {
-      const configuredFileKey = process.env.FIGMA_FILE_KEY?.trim();
       sendJson(response, 200, {
-        figmaUrl:
-          process.env.FIGMA_URL?.trim() ||
-          (configuredFileKey
-            ? `https://www.figma.com/design/${configuredFileKey}/Untitled`
-            : ''),
+        figmaUrl: await defaultFigmaUrl(),
         token: process.env.FIGMA_TOKEN?.trim() || '',
         outputDirectory: process.env.EXPORT_OUTPUT_DIR || './exports',
         formats: (
